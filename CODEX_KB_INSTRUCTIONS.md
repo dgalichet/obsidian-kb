@@ -182,6 +182,11 @@ provider = "fastembed"
 model = "MultilingualE5Small"
 batch_size = 64
 normalize = true
+
+[doctor.unresolved_links]
+allow_forward_links = false
+ignore_targets = []
+ignore_globs = []
 ```
 
 When using E5-style embedding models, encode user queries with the prefix
@@ -402,12 +407,31 @@ Graph expansion is a recall aid, not a source of authority. A neighbor note
 should only be read when its title, heading, tags, or snippet make it relevant
 to the user question.
 
+For compact agent context, add bounded source text directly to JSON results:
+
+```bash
+obsidian-kb search "Obsidian as a local RAG knowledge base" --mode hybrid --expand-graph --top 5 --include-text --max-chars 1200 --json
+```
+
+Use `--include-text` only with `--json`. `--max-chars` limits included text per
+chunk; `--max-chars 0` includes the full chunk text. Prefer a bounded value for
+agent workflows unless the user explicitly needs full chunk content.
+
 Add `--vault /path/to/Vault` only when the current directory does not contain
 the relevant `.obsidian-kb.toml` and no `--config` path is provided.
 
 ## Reading Chunks
 
-After search, read chunks with `show`:
+`search --json` returns enough metadata to select and cite likely sources:
+paths, headings, line ranges, tags, snippets, chunk IDs, and ranking evidence.
+When `--include-text` is used, it can also return compact chunk text.
+
+Use `show` after search when:
+
+- the snippet and included text are insufficient for a sourced answer;
+- precise editing or verification needs the full chunk;
+- the user asks for exact wording beyond the included text limit;
+- the answer depends on context near the chunk boundaries.
 
 ```bash
 obsidian-kb show <chunk-id> --json
@@ -416,6 +440,7 @@ obsidian-kb show <chunk-id> --json
 Reading discipline:
 
 - start with the top 3 to 5 chunks;
+- use `search --include-text --max-chars 1200 --json` for a compact first pass;
 - increase only if the answer remains ambiguous;
 - prefer several short chunks over a full large document;
 - stop reading when the necessary facts are sufficiently verified;
@@ -450,7 +475,10 @@ JSON search results expose fields such as:
 - `path`;
 - `title`;
 - `heading_path`;
+- `start_line` and `end_line`;
+- `tags`;
 - `snippet`;
+- `text`, only when `--include-text` is set;
 - `chunk_id`.
 
 Use these fields to explain why a passage was read. Do not confuse final score
@@ -478,8 +506,9 @@ Standard procedure:
 
 1. Classify the question: exact, vague, or conceptual.
 2. Run `obsidian-kb search` with the appropriate mode.
-3. Inspect titles, headings, snippets, and scores.
-4. Read the best chunks with `obsidian-kb show`.
+3. Inspect titles, headings, line ranges, tags, snippets, and scores.
+4. If compact context is enough, use `--include-text`; otherwise read the best
+   chunks with `obsidian-kb show`.
 5. Run a more precise query if the chunks are insufficient.
 6. Answer with citations.
 7. Mention limitations when sources do not cover the full question.
@@ -495,6 +524,9 @@ Mode:
 
 Chunks read:
 - <chunk-id> - path - heading
+
+Search metadata:
+- lines <start>-<end> - tags [...]
 
 Facts:
 - ...
@@ -546,6 +578,7 @@ For diagnostics:
 ```bash
 obsidian-kb stats --json
 obsidian-kb graph "Note name" --depth 1 --json
+obsidian-kb doctor --json
 ```
 
 Add `--vault /path/to/Vault` to these commands only when running outside the
@@ -595,9 +628,10 @@ Never read the whole vault. For content questions about the vault, always start
 with obsidian-kb search. For maintenance, freshness, or diagnostic tasks, start
 with doctor, stats, or index as appropriate.
 Use bm25 for exact names, vector for vague questions, and hybrid --expand-graph
-for conceptual questions. Read only the best chunks with obsidian-kb show.
-Return a short summary with chunk IDs, paths, headings, facts, and
-uncertainties.
+for conceptual questions. For compact context, use search --include-text
+--max-chars 1200 --json. Read only the best chunks with obsidian-kb show when
+the search text or snippet is insufficient. Return a short summary with chunk
+IDs, paths, headings, line ranges, tags, facts, and uncertainties.
 ```
 
 System prompt for an answer agent:
