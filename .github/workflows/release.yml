@@ -48,6 +48,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
+          cache-bin: false
 
       - name: Verify tag matches package version
         shell: bash
