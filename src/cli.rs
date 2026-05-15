@@ -21,6 +21,8 @@ pub enum Command {
     Graph(GraphArgs),
     Stats(StatsArgs),
     Doctor(DoctorArgs),
+    #[command(about = "Print version information")]
+    Version,
 }
 
 #[derive(Debug, Args)]

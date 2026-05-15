@@ -161,6 +161,8 @@ obsidian-kb stats --json
 
 obsidian-kb doctor
 obsidian-kb doctor --json
+
+obsidian-kb version
 ```
 
 `doctor` checks the config, vault path, index directory, SQLite database, Tantivy index, embedding model, exclude globs, Markdown file count, indexed file count, chunks, and embeddings.
