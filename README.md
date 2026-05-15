@@ -44,6 +44,17 @@ Full GraphRAG usually builds entities, relationships, communities, summaries, an
 
 ## Install
 
+With Homebrew on macOS:
+
+```bash
+brew install dgalichet/tap/obsidian-kb
+```
+
+Or download the matching macOS archive from the latest GitHub Release and put
+`obsidian-kb` on your `PATH`.
+
+For development from a Rust checkout:
+
 ```bash
 cargo build --release
 ```
@@ -179,7 +190,25 @@ All indexes are local. Metadata and embeddings are stored in SQLite. BM25 data i
 ## Roadmap
 
 - For very large vaults, replace brute-force vector search with an ANN index such as HNSW, Qdrant, LanceDB, or another local vector index.
-- Add release binaries once the public repository and distribution target are settled.
+- Add more packaged distribution targets if non-macOS usage becomes necessary.
+
+## Release
+
+Releases are created from version tags. Update `Cargo.toml`, commit the change,
+then create and push a matching tag:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The release workflow builds `aarch64-apple-darwin` and
+`x86_64-apple-darwin` archives, publishes them to GitHub Releases, and updates
+the `dgalichet/homebrew-tap` formula when the repository secret
+`HOMEBREW_TAP_TOKEN` is configured with write access to that tap.
+
+The tap repository should be public and initialized with at least one commit so
+Homebrew can clone it as `dgalichet/tap`.
 
 ## License
 

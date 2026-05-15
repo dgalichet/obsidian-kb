@@ -1,0 +1,256 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag, for example v0.1.0"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  BIN_NAME: obsidian-kb
+  CARGO_TERM_COLOR: always
+  HOMEBREW_TAP_REPOSITORY: dgalichet/homebrew-tap
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  REPOSITORY: dgalichet/obsidian-kb
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            runner: macos-15
+          - target: x86_64-apple-darwin
+            runner: macos-15-intel
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Verify tag matches package version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)"
+          expected_tag="v${version}"
+
+          if [[ "${RELEASE_TAG}" != "${expected_tag}" ]]; then
+            echo "Release tag ${RELEASE_TAG} does not match Cargo.toml version ${version}."
+            echo "Expected ${expected_tag}."
+            exit 1
+          fi
+
+      - name: Test
+        run: cargo test --locked
+
+      - name: Build release binary
+        run: cargo build --release --locked --target "${{ matrix.target }}"
+
+      - name: Package archive
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          target="${{ matrix.target }}"
+          package="${BIN_NAME}-${target}"
+          staging="${RUNNER_TEMP}/${package}"
+          binary="target/${target}/release/${BIN_NAME}"
+
+          mkdir -p "${staging}" dist
+          cp "${binary}" "${staging}/"
+          cp README.md LICENSE-APACHE LICENSE-MIT "${staging}/"
+
+          # ONNX Runtime may be linked as a local dylib by the fastembed/ort stack.
+          # If that happens, keep only the libraries reported by otool next to the
+          # executable. Do not copy every dylib under target/, because proc-macro
+          # build artifacts also live there and are not runtime dependencies.
+          while IFS= read -r linked_lib; do
+            lib_name="$(basename "${linked_lib}")"
+            found_lib="$(find "target/${target}/release" -type f -name "${lib_name}" -print -quit)"
+
+            if [[ -n "${found_lib}" ]]; then
+              cp -L "${found_lib}" "${staging}/"
+            fi
+          done < <(
+            otool -L "${binary}" |
+              awk 'NR > 1 { print $1 }' |
+              grep -E '^(@rpath|@loader_path|@executable_path)/' || true
+          )
+
+          if find "${staging}" -maxdepth 1 -type f -name "*.dylib" | grep -q .; then
+            install_name_tool -add_rpath "@executable_path" "${staging}/${BIN_NAME}" 2>/dev/null || true
+          fi
+
+          echo "Linked libraries:"
+          otool -L "${staging}/${BIN_NAME}" || true
+
+          "${staging}/${BIN_NAME}" --help
+
+          smoke_vault="${RUNNER_TEMP}/sample_vault"
+          cp -R tests/fixtures/sample_vault "${smoke_vault}"
+          "${staging}/${BIN_NAME}" init --vault "${smoke_vault}"
+          "${staging}/${BIN_NAME}" index --vault "${smoke_vault}" --no-embeddings
+          "${staging}/${BIN_NAME}" search "BM25" --vault "${smoke_vault}" --mode bm25 --top 1 --json
+
+          tar -C "${RUNNER_TEMP}" -czf "dist/${package}.tar.gz" "${package}"
+          shasum -a 256 "dist/${package}.tar.gz" > "dist/${package}.tar.gz.sha256"
+
+      - name: Upload release archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: |
+            dist/*.tar.gz
+            dist/*.sha256
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub release
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Download archives
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          if gh release view "${RELEASE_TAG}" --repo "${REPOSITORY}" >/dev/null 2>&1; then
+            gh release upload "${RELEASE_TAG}" dist/* --repo "${REPOSITORY}" --clobber
+          else
+            gh release create "${RELEASE_TAG}" dist/* \
+              --repo "${REPOSITORY}" \
+              --title "${RELEASE_TAG}" \
+              --generate-notes
+          fi
+
+  update-homebrew-tap:
+    name: Update Homebrew tap
+    runs-on: ubuntu-latest
+    needs: publish
+
+    steps:
+      - name: Check tap token
+        id: tap-token
+        shell: bash
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${HOMEBREW_TAP_TOKEN}" ]]; then
+            echo "configured=false" >> "${GITHUB_OUTPUT}"
+            echo "Skipping Homebrew tap update; HOMEBREW_TAP_TOKEN is not configured."
+          else
+            echo "configured=true" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Download archives
+        if: steps.tap-token.outputs.configured == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Checkout Homebrew tap
+        if: steps.tap-token.outputs.configured == 'true'
+        shell: bash
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/${HOMEBREW_TAP_REPOSITORY}.git" tap
+
+      - name: Update formula
+        if: steps.tap-token.outputs.configured == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          version="${RELEASE_TAG#v}"
+          arm_sha="$(cut -d " " -f 1 "dist/${BIN_NAME}-aarch64-apple-darwin.tar.gz.sha256")"
+          intel_sha="$(cut -d " " -f 1 "dist/${BIN_NAME}-x86_64-apple-darwin.tar.gz.sha256")"
+
+          mkdir -p tap/Formula
+          cat > tap/Formula/obsidian-kb.rb <<EOF
+          class ObsidianKb < Formula
+            desc "Local-first hybrid retrieval CLI for Obsidian vaults"
+            homepage "https://github.com/${REPOSITORY}"
+            version "${version}"
+            license "MIT OR Apache-2.0"
+
+            on_macos do
+              on_arm do
+                url "https://github.com/${REPOSITORY}/releases/download/${RELEASE_TAG}/obsidian-kb-aarch64-apple-darwin.tar.gz"
+                sha256 "${arm_sha}"
+              end
+
+              on_intel do
+                url "https://github.com/${REPOSITORY}/releases/download/${RELEASE_TAG}/obsidian-kb-x86_64-apple-darwin.tar.gz"
+                sha256 "${intel_sha}"
+              end
+            end
+
+            def install
+              libexec.install Dir["*"]
+              bin.write_exec_script libexec/"obsidian-kb"
+            end
+
+            test do
+              assert_match "Local-first hybrid retrieval", shell_output("#{bin}/obsidian-kb --help")
+            end
+          end
+          EOF
+
+      - name: Commit formula
+        if: steps.tap-token.outputs.configured == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git -C tap config user.name "github-actions[bot]"
+          git -C tap config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C tap add Formula/obsidian-kb.rb
+
+          if git -C tap diff --cached --quiet; then
+            echo "Formula already up to date."
+            exit 0
+          fi
+
+          branch="$(git -C tap symbolic-ref --short HEAD 2>/dev/null || echo main)"
+          git -C tap commit -m "Update obsidian-kb to ${RELEASE_TAG}"
+          git -C tap push origin "HEAD:${branch}"
