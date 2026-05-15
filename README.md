@@ -44,7 +44,7 @@ Full GraphRAG usually builds entities, relationships, communities, summaries, an
 
 ## Install
 
-With Homebrew on macOS:
+With Homebrew on macOS Apple Silicon:
 
 ```bash
 brew install dgalichet/tap/obsidian-kb
@@ -202,10 +202,10 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-The release workflow builds `aarch64-apple-darwin` and
-`x86_64-apple-darwin` archives, publishes them to GitHub Releases, and updates
-the `dgalichet/homebrew-tap` formula when the repository secret
-`HOMEBREW_TAP_TOKEN` is configured with write access to that tap.
+The release workflow builds the `aarch64-apple-darwin` archive, publishes it to
+GitHub Releases, and updates the `dgalichet/homebrew-tap` formula when the
+repository secret `HOMEBREW_TAP_TOKEN` is configured with write access to that
+tap.
 
 The tap repository should be public and initialized with at least one commit so
 Homebrew can clone it as `dgalichet/tap`.

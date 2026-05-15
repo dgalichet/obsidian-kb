@@ -32,8 +32,6 @@ jobs:
         include:
           - target: aarch64-apple-darwin
             runner: macos-15
-          - target: x86_64-apple-darwin
-            runner: macos-15-intel
 
     steps:
       - name: Checkout
@@ -203,7 +201,6 @@ jobs:
 
           version="${RELEASE_TAG#v}"
           arm_sha="$(cut -d " " -f 1 "dist/${BIN_NAME}-aarch64-apple-darwin.tar.gz.sha256")"
-          intel_sha="$(cut -d " " -f 1 "dist/${BIN_NAME}-x86_64-apple-darwin.tar.gz.sha256")"
 
           mkdir -p tap/Formula
           cat > tap/Formula/obsidian-kb.rb <<EOF
@@ -217,11 +214,6 @@ jobs:
               on_arm do
                 url "https://github.com/${REPOSITORY}/releases/download/${RELEASE_TAG}/obsidian-kb-aarch64-apple-darwin.tar.gz"
                 sha256 "${arm_sha}"
-              end
-
-              on_intel do
-                url "https://github.com/${REPOSITORY}/releases/download/${RELEASE_TAG}/obsidian-kb-x86_64-apple-darwin.tar.gz"
-                sha256 "${intel_sha}"
               end
             end
 
