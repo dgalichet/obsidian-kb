@@ -59,3 +59,13 @@ fn extracts_singular_alias_string_tags_and_embedded_links() {
     assert!(links[0].embedded);
     assert_eq!(links[0].raw, "![[attachments/architecture.png]]");
 }
+
+#[test]
+fn extracts_wikilinks_with_escaped_pipes() {
+    let links = markdown::extract_wikilinks(r"[[Notes/Foo\|Bar#Heading|Shown\|Alias]]");
+
+    assert_eq!(links.len(), 1);
+    assert_eq!(links[0].target, "Notes/Foo|Bar");
+    assert_eq!(links[0].anchor.as_deref(), Some("Heading"));
+    assert_eq!(links[0].display.as_deref(), Some("Shown|Alias"));
+}

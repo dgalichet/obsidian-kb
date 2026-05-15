@@ -10,6 +10,7 @@ fn config_defaults_and_loading_are_vault_relative() {
         AppConfig::default_for_vault(Path::new("tests/fixtures/sample_vault"), None).unwrap();
     assert_eq!(config.search.default_mode, "hybrid");
     assert_eq!(config.embeddings.model, "MultilingualE5Small");
+    assert!(!config.doctor.unresolved_links.allow_forward_links);
     assert!(config.embedding_cache_dir().ends_with("obsidian-kb/models"));
     assert!(
         config

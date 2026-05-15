@@ -2,8 +2,13 @@
 name = "obsidian-kb"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.85"
 description = "Local-first hybrid retrieval CLI for Obsidian vaults"
 license = "MIT OR Apache-2.0"
+readme = "README.md"
+documentation = "https://docs.rs/obsidian-kb"
+keywords = ["obsidian", "markdown", "search", "bm25", "rag"]
+categories = ["command-line-utilities", "text-processing"]
 
 [dependencies]
 anyhow = "1"

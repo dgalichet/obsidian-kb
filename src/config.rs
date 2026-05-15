@@ -13,6 +13,8 @@ pub struct AppConfig {
     pub index: IndexConfig,
     pub search: SearchConfig,
     pub embeddings: EmbeddingConfig,
+    #[serde(default)]
+    pub doctor: DoctorConfig,
     #[serde(skip)]
     pub config_dir: PathBuf,
 }
@@ -57,6 +59,22 @@ pub struct EmbeddingConfig {
     pub normalize: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cache_dir: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct DoctorConfig {
+    #[serde(default)]
+    pub unresolved_links: DoctorUnresolvedLinksConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct DoctorUnresolvedLinksConfig {
+    #[serde(default)]
+    pub allow_forward_links: bool,
+    #[serde(default)]
+    pub ignore_targets: Vec<String>,
+    #[serde(default)]
+    pub ignore_globs: Vec<String>,
 }
 
 impl AppConfig {
@@ -118,6 +136,7 @@ impl AppConfig {
                 normalize: true,
                 cache_dir: None,
             },
+            doctor: DoctorConfig::default(),
             config_dir: config_dir.to_path_buf(),
         })
     }

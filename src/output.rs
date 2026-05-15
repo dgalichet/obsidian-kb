@@ -178,6 +178,9 @@ pub fn print_doctor_report(report: &DoctorReport) {
     counts.add_row(vec!["indexed_files", &report.indexed_files.to_string()]);
     counts.add_row(vec!["chunks", &report.chunks.to_string()]);
     counts.add_row(vec!["embeddings", &report.embeddings.to_string()]);
+    counts.add_row(vec!["issues", &report.issue_count.to_string()]);
+    counts.add_row(vec!["warnings", &report.warning_count.to_string()]);
+    counts.add_row(vec!["info", &report.info_count.to_string()]);
     println!("{counts}");
 
     let mut checks = Table::new();
@@ -197,11 +200,36 @@ pub fn print_doctor_report(report: &DoctorReport) {
         println!("{}", "ok".green());
         return;
     }
+    if !report.unresolved_link_groups.is_empty() {
+        let mut groups = Table::new();
+        groups.load_preset(UTF8_FULL).set_header(vec![
+            "unresolved target",
+            "category",
+            "occurrences",
+            "files",
+        ]);
+        for group in &report.unresolved_link_groups {
+            groups.add_row(vec![
+                Cell::new(&group.target),
+                Cell::new(&group.category),
+                Cell::new(group.occurrences),
+                Cell::new(group.files.join(", ")),
+            ]);
+        }
+        println!("{groups}");
+    }
     for issue in &report.issues {
         if issue.level == "fatal" {
-            println!("{} {}", "fatal".red(), issue.message);
+            println!("{} [{}] {}", "fatal".red(), issue.category, issue.message);
+        } else if issue.level == "warning" {
+            println!(
+                "{} [{}] {}",
+                "warning".yellow(),
+                issue.category,
+                issue.message
+            );
         } else {
-            println!("{} {}", "warning".yellow(), issue.message);
+            println!("{} [{}] {}", "info".blue(), issue.category, issue.message);
         }
     }
 }

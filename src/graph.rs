@@ -1,6 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::{Path, PathBuf};
 
 use crate::models::{GraphReport, ParsedNote};
+use crate::normalization;
 
 pub fn resolve_links(notes: &mut [ParsedNote]) -> GraphReport {
     let mut report = GraphReport::default();
@@ -55,8 +57,10 @@ pub fn resolve_links(notes: &mut [ParsedNote]) -> GraphReport {
     }
 
     for note in notes.iter_mut() {
+        let note_path = note.path.clone();
+        let note_vault_path = vault_path_for_note(note);
         for link in note.links.iter_mut() {
-            let keys = link_keys(&note.path, &link.target);
+            let keys = link_keys(&note_path, &link.target);
             let candidates = if link.target.contains('/') {
                 find_candidates(&path_map, &keys)
             } else {
@@ -77,7 +81,7 @@ pub fn resolve_links(notes: &mut [ParsedNote]) -> GraphReport {
                         {
                             report.warnings.push(format!(
                                 "{}: missing heading `{}` in `{}`",
-                                note.path, anchor, target_path
+                                note_path, anchor, target_path
                             ));
                         }
                     }
@@ -85,15 +89,23 @@ pub fn resolve_links(notes: &mut [ParsedNote]) -> GraphReport {
                 Some(paths) => {
                     report.warnings.push(format!(
                         "{}: ambiguous link `{}` could match {}",
-                        note.path,
+                        note_path,
                         link.raw,
                         paths.join(", ")
                     ));
                 }
                 None => {
+                    if existing_embed_asset(
+                        note_vault_path.as_deref(),
+                        &note_path,
+                        &link.target,
+                        link.embedded,
+                    ) {
+                        continue;
+                    }
                     report
                         .warnings
-                        .push(format!("{}: unresolved link `{}`", note.path, link.raw));
+                        .push(format!("{}: unresolved link `{}`", note_path, link.raw));
                 }
             }
         }
@@ -103,12 +115,69 @@ pub fn resolve_links(notes: &mut [ParsedNote]) -> GraphReport {
 }
 
 fn normalize_target(value: &str) -> String {
-    value
+    let normalized = normalization::normalize_text(value, true)
         .replace('\\', "/")
         .trim()
         .trim_start_matches("./")
-        .trim_end_matches(".md")
-        .to_lowercase()
+        .to_lowercase();
+    normalized.trim_end_matches(".md").to_string()
+}
+
+fn existing_embed_asset(
+    vault_path: Option<&Path>,
+    source_path: &str,
+    target: &str,
+    embedded: bool,
+) -> bool {
+    if !embedded {
+        return false;
+    }
+    let Some(vault_path) = vault_path else {
+        return false;
+    };
+    asset_candidates(vault_path, source_path, target)
+        .into_iter()
+        .any(|candidate| {
+            if !candidate.is_file() {
+                return false;
+            }
+            let path = candidate.to_string_lossy();
+            candidate.extension().and_then(|ext| ext.to_str()) != Some("md")
+                || path.ends_with(".excalidraw.md")
+        })
+}
+
+fn asset_candidates(vault_path: &Path, source_path: &str, target: &str) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    let normalized_target = target.replace('\\', "/");
+    let target_path = Path::new(&normalized_target);
+
+    if target_path.is_absolute() {
+        candidates.push(target_path.to_path_buf());
+    } else {
+        candidates.push(vault_path.join(target_path));
+        if normalized_target.starts_with("./") || normalized_target.starts_with("../") {
+            let source_parent = Path::new(source_path).parent().unwrap_or(Path::new(""));
+            candidates.push(vault_path.join(source_parent).join(target_path));
+        }
+    }
+
+    let mut with_md = Vec::new();
+    for candidate in &candidates {
+        if candidate.extension().and_then(|ext| ext.to_str()) != Some("md") {
+            with_md.push(PathBuf::from(format!("{}.md", candidate.to_string_lossy())));
+        }
+    }
+    candidates.extend(with_md);
+    candidates
+}
+
+fn vault_path_for_note(note: &ParsedNote) -> Option<PathBuf> {
+    let mut path = note.absolute_path.clone();
+    for _ in Path::new(&note.path).components() {
+        path.pop();
+    }
+    path.is_dir().then_some(path)
 }
 
 fn find_candidates<'a>(

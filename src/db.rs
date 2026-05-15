@@ -6,6 +6,7 @@ use std::path::Path;
 
 use crate::models::{
     ChunkRecord, GraphEdge, GraphView, IndexStats, NoteSummary, ParsedNote, StatsReport,
+    UnresolvedLinkRecord,
 };
 use crate::schema;
 
@@ -405,6 +406,27 @@ impl Db {
              ORDER BY f.rel_path, links.target_raw",
         )?;
         let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(Into::into)
+    }
+
+    pub fn unresolved_link_records(&self) -> Result<Vec<UnresolvedLinkRecord>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT f.rel_path, links.target_raw, links.target_normalized, links.link_type, links.link_text
+             FROM links
+             JOIN files f ON f.id = links.source_file_id
+             WHERE links.target_file_id IS NULL
+             ORDER BY links.target_normalized, f.rel_path, links.target_raw",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(UnresolvedLinkRecord {
+                source_path: row.get(0)?,
+                target_raw: row.get(1)?,
+                target_normalized: row.get(2)?,
+                link_type: row.get(3)?,
+                link_text: row.get(4)?,
+            })
+        })?;
         rows.collect::<rusqlite::Result<Vec<_>>>()
             .map_err(Into::into)
     }

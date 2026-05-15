@@ -15,6 +15,8 @@ pub fn search(
     mode: SearchMode,
     limit: usize,
     graph: bool,
+    include_text: bool,
+    max_chars: usize,
 ) -> Result<Vec<SearchHit>> {
     let query = query.trim();
     if query.is_empty() {
@@ -81,6 +83,7 @@ pub fn search(
                 heading_path: chunk.heading_path.clone(),
                 heading: chunk.heading_path,
                 snippet: make_snippet(&chunk.text, 240),
+                text: include_text.then(|| limit_text(&chunk.text, max_chars)),
                 bm25_rank: candidate.lexical_rank,
                 bm25_score: candidate.lexical_score,
                 vector_rank: candidate.vector_rank,
@@ -154,10 +157,14 @@ fn expand_graph(db: &Db, fused: &mut Vec<FusedCandidate>, config: &AppConfig) ->
 
 fn make_snippet(text: &str, max_chars: usize) -> String {
     let compact = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    if compact.chars().count() <= max_chars {
-        return compact;
+    limit_text(&compact, max_chars)
+}
+
+fn limit_text(text: &str, max_chars: usize) -> String {
+    if max_chars == 0 || text.chars().count() <= max_chars {
+        return text.to_string();
     }
-    let mut snippet = compact.chars().take(max_chars).collect::<String>();
-    snippet.push_str("...");
-    snippet
+    let mut limited = text.chars().take(max_chars).collect::<String>();
+    limited.push_str("...");
+    limited
 }

@@ -100,6 +100,11 @@ batch_size = 64
 normalize = true
 # Optional override. Defaults to the user cache directory.
 # cache_dir = "~/Library/Caches/obsidian-kb/models"
+
+[doctor.unresolved_links]
+allow_forward_links = false
+ignore_targets = []
+ignore_globs = []
 ```
 
 ## Index
@@ -121,9 +126,11 @@ obsidian-kb search "Obsidian RAG second brain"
 obsidian-kb search "Service Connect TLS App Mesh" --mode bm25 --top 5
 obsidian-kb search "Comment eviter la saturation du contexte ?" --mode vector --top 5
 obsidian-kb search "query" --mode hybrid --expand-graph --json
+obsidian-kb search "query" --mode hybrid --top 5 --include-text --max-chars 1200 --json
 ```
 
 Search JSON includes explainability fields: final rank, final score, BM25 rank and score, vector rank and score, graph boost, path, title, heading path, snippet, and chunk ID.
+Use `--include-text` with JSON when an agent needs compact source context without a separate `show` call. `--max-chars 0` includes the full chunk text.
 
 ## Inspect
 
@@ -138,9 +145,11 @@ obsidian-kb stats
 obsidian-kb stats --json
 
 obsidian-kb doctor
+obsidian-kb doctor --json
 ```
 
 `doctor` checks the config, vault path, index directory, SQLite database, Tantivy index, embedding model, exclude globs, Markdown file count, indexed file count, chunks, and embeddings.
+JSON output includes structured issues, unresolved-link categories, and target groups for automation.
 
 ## Codex Usage
 
@@ -163,4 +172,14 @@ All indexes are local. Metadata and embeddings are stored in SQLite. BM25 data i
 - Graph expansion is depth-limited and intentionally shallow.
 - Markdown parsing targets common Obsidian patterns, not every Markdown extension.
 
-TODO: For very large vaults, replace brute-force vector search with an ANN index such as HNSW, Qdrant, LanceDB, or another local vector index.
+## Roadmap
+
+- For very large vaults, replace brute-force vector search with an ANN index such as HNSW, Qdrant, LanceDB, or another local vector index.
+- Add release binaries once the public repository and distribution target are settled.
+
+## License
+
+Licensed under either of:
+
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
+- MIT license ([LICENSE-MIT](LICENSE-MIT))

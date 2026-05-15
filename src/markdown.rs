@@ -30,18 +30,21 @@ pub fn extract_wikilinks(markdown: &str) -> Vec<WikiLink> {
             if inner.is_empty() {
                 return None;
             }
-            let (target_part, display) = split_once_trimmed(inner, '|');
+            let (target_part, display) = split_once_unescaped_trimmed(inner, '|');
             let (target, anchor) = split_once_trimmed(target_part, '#');
             if target.is_empty() {
                 return None;
             }
+            let target = unescape_wikilink_part(target);
             Some(WikiLink {
                 raw,
-                target: target.to_string(),
-                anchor: anchor.filter(|value| !value.is_empty()).map(str::to_string),
+                target,
+                anchor: anchor
+                    .filter(|value| !value.is_empty())
+                    .map(unescape_wikilink_part),
                 display: display
                     .filter(|value| !value.is_empty())
-                    .map(str::to_string),
+                    .map(unescape_wikilink_part),
                 embedded,
                 target_path: None,
             })
@@ -134,6 +137,29 @@ fn split_once_trimmed(value: &str, delimiter: char) -> (&str, Option<&str>) {
     } else {
         (value.trim(), None)
     }
+}
+
+fn split_once_unescaped_trimmed(value: &str, delimiter: char) -> (&str, Option<&str>) {
+    let mut escaped = false;
+    for (index, ch) in value.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        if ch == delimiter {
+            let (left, right) = value.split_at(index);
+            return (left.trim(), Some(right[delimiter.len_utf8()..].trim()));
+        }
+    }
+    (value.trim(), None)
+}
+
+fn unescape_wikilink_part(value: &str) -> String {
+    value.replace("\\|", "|").replace("\\#", "#")
 }
 
 fn wikilink_regex() -> &'static Regex {

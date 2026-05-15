@@ -76,6 +76,22 @@ pub struct SearchArgs {
 
     #[arg(long, help = "Emit machine-readable JSON")]
     pub json: bool,
+
+    #[arg(
+        long,
+        requires = "json",
+        help = "Include compact chunk text in JSON output"
+    )]
+    pub include_text: bool,
+
+    #[arg(
+        long,
+        default_value_t = 1200,
+        requires = "include_text",
+        value_name = "CHARS",
+        help = "Maximum characters per included chunk text; use 0 for full chunk text"
+    )]
+    pub max_chars: usize,
 }
 
 #[derive(Debug, Args)]
@@ -116,6 +132,9 @@ pub struct StatsArgs {
 pub struct DoctorArgs {
     #[arg(long, help = "Path to the Obsidian vault")]
     pub vault: Option<PathBuf>,
+
+    #[arg(long, help = "Emit machine-readable JSON")]
+    pub json: bool,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]

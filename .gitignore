@@ -1,2 +1,12 @@
 /target/
 .DS_Store
+
+# Local obsidian-kb runtime state
+/.obsidian-kb/
+/.obsidian-kb.toml
+
+# Local logs and database scratch files
+*.log
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal

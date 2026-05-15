@@ -118,6 +118,8 @@ pub struct SearchHit {
     pub heading_path: String,
     pub heading: String,
     pub snippet: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
     pub bm25_rank: Option<usize>,
     pub bm25_score: Option<f32>,
     pub vector_rank: Option<usize>,
@@ -138,6 +140,15 @@ pub struct SearchCandidate {
 #[derive(Debug, Clone, Default)]
 pub struct GraphReport {
     pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UnresolvedLinkRecord {
+    pub source_path: String,
+    pub target_raw: String,
+    pub target_normalized: String,
+    pub link_type: String,
+    pub link_text: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -181,18 +192,40 @@ pub struct DoctorReport {
     pub markdown_files: usize,
     pub indexed_files: usize,
     pub embeddings: usize,
+    pub issue_count: usize,
     pub fatal_count: usize,
     pub warning_count: usize,
+    pub info_count: usize,
     pub notes: usize,
     pub chunks: usize,
     pub checks: Vec<DoctorCheck>,
+    pub unresolved_link_groups: Vec<DoctorLinkGroup>,
     pub issues: Vec<DoctorIssue>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DoctorIssue {
     pub level: String,
+    pub category: String,
     pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub raw: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub link_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub suggestion: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DoctorLinkGroup {
+    pub target: String,
+    pub category: String,
+    pub occurrences: usize,
+    pub files: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

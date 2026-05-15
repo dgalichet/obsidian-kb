@@ -1,3 +1,6 @@
+#![doc = include_str!("../README.md")]
+#![forbid(unsafe_code)]
+
 pub mod chunking;
 pub mod cli;
 pub mod config;
@@ -90,7 +93,15 @@ pub fn run() -> Result<()> {
                 .mode
                 .map(SearchMode::from)
                 .unwrap_or_else(|| config.default_search_mode());
-            let hits = search::search(&config, &query, mode, args.top, args.expand_graph)?;
+            let hits = search::search(
+                &config,
+                &query,
+                mode,
+                args.top,
+                args.expand_graph,
+                args.include_text,
+                args.max_chars,
+            )?;
             if args.json {
                 output::print_json(&hits)?;
             } else {
@@ -137,7 +148,11 @@ pub fn run() -> Result<()> {
         Command::Doctor(args) => {
             let config = config::load_existing(args.vault.as_deref(), global_config.as_deref())?;
             let report = doctor::run(&config)?;
-            output::print_doctor_report(&report);
+            if args.json {
+                output::print_json(&report)?;
+            } else {
+                output::print_doctor_report(&report);
+            }
             if report.fatal_count > 0 {
                 std::process::exit(2);
             }
