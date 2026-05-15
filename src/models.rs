@@ -117,6 +117,9 @@ pub struct SearchHit {
     pub chunk_id: String,
     pub heading_path: String,
     pub heading: String,
+    pub start_line: usize,
+    pub end_line: usize,
+    pub tags: Vec<String>,
     pub snippet: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,

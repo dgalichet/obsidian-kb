@@ -100,6 +100,15 @@ fn search_json_includes_explainability_fields_and_sanitizes_queries() {
     assert!(hits[0]["bm25_score"].as_f64().unwrap() > 0.0);
     assert!(hits[0]["heading_path"].is_string());
     assert!(hits[0]["chunk_id"].is_string());
+    assert!(hits[0]["start_line"].as_u64().unwrap() >= 1);
+    assert!(hits[0]["end_line"].as_u64().unwrap() >= hits[0]["start_line"].as_u64().unwrap());
+    assert!(
+        hits[0]["tags"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|tag| tag.is_string())
+    );
     assert!(hits[0].get("text").is_none());
 }
 

@@ -129,7 +129,7 @@ obsidian-kb search "query" --mode hybrid --expand-graph --json
 obsidian-kb search "query" --mode hybrid --top 5 --include-text --max-chars 1200 --json
 ```
 
-Search JSON includes explainability fields: final rank, final score, BM25 rank and score, vector rank and score, graph boost, path, title, heading path, snippet, and chunk ID.
+Search JSON includes explainability fields: final rank, final score, BM25 rank and score, vector rank and score, graph boost, path, title, heading path, line range, tags, snippet, and chunk ID.
 Use `--include-text` with JSON when an agent needs compact source context without a separate `show` call. `--max-chars 0` includes the full chunk text.
 
 ## Inspect
