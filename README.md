@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/obsidian-kb-logo.png" alt="obsidian-kb logo" width="180">
+</p>
+
 # obsidian-kb
 
 `obsidian-kb` is a local retrieval layer for Obsidian Markdown notes. It helps an LLM or coding agent retrieve relevant context without reading the whole vault.
