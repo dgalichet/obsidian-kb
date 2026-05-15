@@ -1,155 +1,154 @@
-# Codex Instructions for Building a Local Knowledge Base from Obsidian
+# Agent Instructions for Obsidian Knowledge Base
 
-This file describes a procedure an agent such as Codex can follow to turn an
-Obsidian vault into a useful local knowledge base for LLM-assisted work without
-reading the whole vault.
+Use this document to guide an LLM agent such as Codex or Claude Code when it
+needs to initialize, index, maintain, or query an Obsidian vault with
+`obsidian-kb`.
 
-This procedure keeps indexing, embeddings, and retrieval local. The
-`obsidian-kb` tool itself does not call hosted LLM APIs and does not upload
-vault content.
+`obsidian-kb` means **Obsidian Knowledge Base**. It is a local-first retrieval
+layer for Obsidian Markdown notes. The goal is not to load the whole vault into
+an LLM context. The goal is to index the vault locally, retrieve a few relevant
+chunks, and answer with citations.
 
-When an external agent such as Codex reads selected chunks and includes them in
-its context, those selected excerpts may be sent to the model provider depending
-on the agent configuration. Therefore, retrieval must remain selective and
-minimal.
+## Agent Contract
 
-The core idea is straightforward: Obsidian provides Markdown files, tags, and
-wikilinks. Obsidian alone is not RAG. The useful knowledge base comes from the
-retrieval layer added by `obsidian-kb`: parsing, chunking, BM25 indexing, local
-embeddings, rank fusion, limited graph expansion, and disciplined selective
-reading.
+Non-negotiable rules:
 
-## Objective
+- For content questions about the vault, always run `obsidian-kb search` first.
+- Never read the whole vault.
+- Do not use recursive `cat`, `rg`, `grep`, `find`, `fd`, or bulk file reads to
+  answer vault content questions before search has identified specific sources.
+- Read only the top relevant chunks returned by search.
+- Prefer `search --include-text --max-chars 1200 --json` for compact first-pass
+  context.
+- Use `show <chunk-id> --json` only when the search result text is insufficient.
+- Cite note paths, headings, and line ranges in every content summary.
+- Do not modify Obsidian notes unless the user explicitly asks.
+- Do not add OpenAI, Claude, ChatGPT, or other hosted LLM API calls inside
+  `obsidian-kb`.
+- Keep indexing, embeddings, and retrieval local.
+- Be explicit that excerpts read by an external agent may be sent to that
+  agent's model provider depending on the agent configuration.
 
-Build a local knowledge base that lets an agent:
+The useful behavior comes from selection, not volume.
 
-- retrieve a few relevant passages instead of loading the whole vault;
-- distinguish exact search, conceptual search, and vague semantic search;
-- cite the file paths, titles, and headings it consulted;
-- keep context short, clean, and verifiable;
-- keep Obsidian Markdown files as the source of truth;
-- write only local index files under `.obsidian-kb/`, unless the user explicitly
-  asks to modify the vault.
+## What The Tool Does
 
-## Binary Location
+`obsidian-kb` indexes an Obsidian vault as Markdown:
 
-Assume the locally installed binary is:
-
-```bash
-${HOME}/.cargo/bin/obsidian-kb
+```text
+Obsidian Markdown vault
+  -> frontmatter, aliases, tags, headings, wikilinks, and backlinks
+  -> heading-aware chunks
+  -> SQLite metadata and local embeddings
+  -> Tantivy BM25 index
+  -> local FastEmbed vector embeddings
+  -> BM25, vector, or hybrid search
+  -> Reciprocal Rank Fusion
+  -> optional shallow graph expansion
+  -> cited chunks for the agent
 ```
 
-If `${HOME}/.cargo/bin` is in `PATH`, use the short command:
+Do not describe this as full GraphRAG. `obsidian-kb` does not extract entities,
+create communities, generate global summaries, or perform LLM graph reasoning.
+It only uses Obsidian links and backlinks as a shallow retrieval aid.
+
+## Binary Resolution
+
+Prefer the installed binary:
 
 ```bash
 obsidian-kb
 ```
 
-Otherwise, invoke the binary with its full installed path:
+If it is not in `PATH`, try:
 
 ```bash
 ${HOME}/.cargo/bin/obsidian-kb
 ```
 
-The preferred local installation command from the project root is:
+From a checkout of this repository, install or update the local binary with:
 
 ```bash
 cargo install --path . --force
 ```
 
-Do not require callers to use `./target/release/obsidian-kb` once the binary has
-been installed.
+After installation, do not require users or agents to call
+`./target/release/obsidian-kb`.
 
-## Target Architecture
+## Golden Path: Index A Vault
 
-Expected flow:
-
-```text
-Source documents
-  -> cleaning / Markdown conversion when needed
-  -> structured Obsidian vault
-  -> obsidian-kb init
-  -> Markdown, frontmatter, tags, aliases, and wikilink parsing
-  -> heading-aware chunking
-  -> local SQLite storage
-  -> Tantivy BM25 index
-  -> local FastEmbed embeddings
-  -> hybrid BM25 + vector search
-  -> Reciprocal Rank Fusion
-  -> limited graph expansion through wikilinks/backlinks
-  -> selective reading of top chunks
-  -> concise answer with citations
-```
-
-Do not present this system as full GraphRAG. `obsidian-kb` does not extract
-entities, does not generate communities, does not create global summaries, and
-does not call hosted LLMs.
-
-## Non-Negotiable Rules
-
-- For content questions about the vault, always start with `obsidian-kb search`.
-- For diagnostics or maintenance, start with `doctor`, `stats`, or `index`.
-- Never read the whole vault to answer a question.
-- Read only the best chunks returned by search.
-- Do not use `cat`, `rg`, `grep`, `fd`, `find`, recursive directory reads, or
-  bulk file opening to answer content questions unless `obsidian-kb search` has
-  first identified a specific file or chunk that needs inspection.
-- Do not modify Obsidian notes unless explicitly asked.
-- Do not add OpenAI, Claude, ChatGPT, or other hosted LLM calls inside
-  `obsidian-kb`.
-- Keep indexing, embeddings, and retrieval local.
-- Be explicit that selected chunks read by an external agent may be sent to that
-  agent's model provider depending on configuration.
-- Cite file paths and headings in every content summary.
-- Prefer a partial sourced answer over a broad unsourced answer.
-
-## Initializing a Vault
-
-From the local machine:
+Preferred setup keeps `.obsidian-kb.toml` inside the vault. This makes later
+commands simple and avoids ambiguity about where the config lives.
 
 ```bash
-obsidian-kb init --vault /path/to/ObsidianVault
-obsidian-kb index --vault /path/to/ObsidianVault
-obsidian-kb doctor --vault /path/to/ObsidianVault
-obsidian-kb stats --vault /path/to/ObsidianVault --json
-```
-
-If `obsidian-kb` is not in `PATH`, use:
-
-```bash
-${HOME}/.cargo/bin/obsidian-kb init --vault /path/to/ObsidianVault
-${HOME}/.cargo/bin/obsidian-kb index --vault /path/to/ObsidianVault
-${HOME}/.cargo/bin/obsidian-kb doctor --vault /path/to/ObsidianVault
-${HOME}/.cargo/bin/obsidian-kb stats --vault /path/to/ObsidianVault --json
-```
-
-The `init` command creates `.obsidian-kb.toml`. The index files live under
-`.obsidian-kb/`, not inside the Markdown notes. Relative paths in the config are
-resolved from the configuration directory.
-
-If the current working directory contains `.obsidian-kb.toml`, commands can be
-run without `--vault`:
-
-```bash
-cd /path/to/directory/containing/config
-obsidian-kb search "local RAG with Obsidian" --mode hybrid --expand-graph
+cd /path/to/ObsidianVault
+obsidian-kb init --vault .
 obsidian-kb index
 obsidian-kb doctor
+obsidian-kb stats --json
 ```
 
-Config resolution order:
+Then run three smoke-test searches:
 
-1. `--config /path/to/.obsidian-kb.toml`, when provided.
-2. `--vault /path/to/vault`, which resolves
-   `/path/to/vault/.obsidian-kb.toml`.
-3. `.obsidian-kb.toml` in the current working directory.
+```bash
+obsidian-kb search "exact project or note name" --mode bm25 --top 5 --json
+obsidian-kb search "vague conceptual question" --mode vector --top 5 --json
+obsidian-kb search "broad topic to explore" --mode hybrid --expand-graph --top 8 --json
+```
 
-## Recommended Configuration
+Read only a few returned chunks:
 
-Expected starting configuration:
+```bash
+obsidian-kb show <chunk-id> --json
+```
+
+Report:
+
+- vault path;
+- config path;
+- index stats;
+- doctor issues and warnings;
+- whether BM25, vector, and hybrid searches return useful chunks;
+- note structure problems such as huge notes, noisy imports, missing headings, or
+  broken links.
+
+Do not change notes during this setup unless the user explicitly approves it.
+
+## Config Placement And Resolution
+
+Important: `obsidian-kb init` writes `.obsidian-kb.toml` in the current working
+directory. Therefore, for a vault-local config, run `init` from inside the
+vault:
+
+```bash
+cd /path/to/ObsidianVault
+obsidian-kb init --vault .
+```
+
+If a config is stored somewhere else, pass it explicitly:
+
+```bash
+obsidian-kb --config /path/to/.obsidian-kb.toml index
+obsidian-kb --config /path/to/.obsidian-kb.toml search "query" --json
+```
+
+Config lookup order for commands that load an existing config:
+
+1. `--config /path/to/.obsidian-kb.toml`
+2. `--vault /path/to/vault`, which expects
+   `/path/to/vault/.obsidian-kb.toml`
+3. `.obsidian-kb.toml` in the current working directory
+
+Use `--vault /path/to/Vault` only when the config is actually located at
+`/path/to/Vault/.obsidian-kb.toml`. Otherwise use `--config`.
+
+## Recommended Starting Config
+
+The default config is a good starting point:
 
 ```toml
 [vault]
+path = "/path/to/ObsidianVault"
 exclude_globs = [
   ".obsidian/**",
   ".obsidian-kb/**",
@@ -159,6 +158,9 @@ exclude_globs = [
 ]
 
 [index]
+store_dir = ".obsidian-kb"
+database_path = ".obsidian-kb/metadata.sqlite"
+tantivy_index_dir = ".obsidian-kb/tantivy"
 chunk_target_chars = 3000
 chunk_overlap_chars = 300
 max_chunk_chars = 5000
@@ -182,6 +184,8 @@ provider = "fastembed"
 model = "MultilingualE5Small"
 batch_size = 64
 normalize = true
+# Optional override. Defaults to the user cache directory.
+# cache_dir = "~/Library/Caches/obsidian-kb/models"
 
 [doctor.unresolved_links]
 allow_forward_links = false
@@ -189,284 +193,142 @@ ignore_targets = []
 ignore_globs = []
 ```
 
-When using E5-style embedding models, encode user queries with the prefix
-`query: ` and document chunks with the prefix `passage: `.
+Tune only when there is evidence:
 
-Example:
-
-- query embedding input: `query: how to avoid overloading an agent context`
-- document embedding input: `passage: <chunk content>`
-
-Tune only when there is a measured problem:
-
-- chunks too long: reduce `chunk_target_chars` and `max_chunk_chars`;
+- chunks too large or mixed: reduce `chunk_target_chars` and `max_chunk_chars`;
 - weak recall: increase `bm25_candidates` or `vector_candidates`;
 - noisy graph expansion: reduce `graph_max_neighbors` or avoid
   `--expand-graph`;
-- embeddings unavailable: temporarily index with `--no-embeddings`, then index
-  again when FastEmbed is available.
+- recurring false-positive unresolved links: configure
+  `[doctor.unresolved_links]`;
+- shared model cache needed: set `embeddings.cache_dir`.
 
-## Index Freshness
+FastEmbed may download a local embedding model on first embedding build. The
+download is for local model files, not a hosted LLM call. If embeddings are
+temporarily unavailable, an agent may run:
 
-Before answering a content question, do not rebuild the index automatically.
+```bash
+obsidian-kb index --no-embeddings
+```
 
-However, if:
+Then use `--mode bm25` until embeddings can be built.
 
-- search results are obviously stale;
-- recently created notes are missing;
-- the user explicitly mentions recent changes;
-- `doctor` reports stale files;
+## Indexing Policy
 
-then run:
+For the first setup:
+
+```bash
+obsidian-kb index
+obsidian-kb doctor
+```
+
+For routine refresh after notes changed:
 
 ```bash
 obsidian-kb index --changed-only
+obsidian-kb doctor
 ```
 
-Then repeat the search.
+For diagnostics:
 
-Do not run `--rebuild` unless:
+```bash
+obsidian-kb stats --json
+obsidian-kb doctor --json
+obsidian-kb graph "Note name" --depth 1 --json
+```
 
-- the config changed;
+Do not rebuild automatically before every answer. Search first. Refresh the
+index only when:
+
+- the user mentions recent note changes;
+- expected recent notes are missing from search results;
+- `doctor` reports missing indexes, count mismatches, or config problems;
+- smoke tests return obviously stale results.
+
+Use a full rebuild only when:
+
 - chunking settings changed;
 - the embedding model changed;
-- the Tantivy or SQLite index appears corrupted;
-- the user explicitly requests a full rebuild.
+- the config changed in a way that affects indexed content;
+- SQLite or Tantivy indexes appear corrupted;
+- the user explicitly asks for a full rebuild.
 
-## Document Cleaning and Ingestion
+Full rebuild:
 
-`obsidian-kb` indexes Markdown. PDFs, scans, HTML exports, office documents, and
-image-heavy sources must be converted cleanly before they enter the vault.
-
-Procedure for an ingestion agent:
-
-1. Identify the source type: native Markdown, text PDF, OCR scan, image, table,
-   web export, or office document.
-2. Convert to structured Markdown before indexing.
-3. Remove noise: navigation, repeated footers, ads, irrelevant legal sections,
-   duplicated text, and corrupted OCR fragments.
-4. Preserve logical structure: headings, subheadings, lists, tables, code
-   blocks, and useful quotations.
-5. Describe useful images in Markdown when they contain information.
-6. Preserve source references: origin, date, author, local path, or source URL
-   when available.
-7. Avoid over-aggressive summaries during ingestion: the note must remain
-   verifiable.
-
-Do not blindly automate conversion through an LLM if doing so adds token cost,
-noise, or errors. For a small number of critical documents, targeted manual
-cleaning can be better.
-
-## Vault Organization
-
-The vault should remain readable by a human. A simple structure is enough:
-
-```text
-Vault/
-  Inbox/
-  Sources/
-  Notes/
-  Projects/
-  Index/
+```bash
+obsidian-kb index --rebuild
+obsidian-kb doctor
 ```
 
-Good practices:
+## Choosing Search Mode
 
-- each note should have an explicit title;
-- headings should divide ideas, not merely decorate the page;
-- tags should remain stable and few;
-- aliases should cover exact names, acronyms, and useful variants;
-- wikilinks should represent useful relationships, not every important word;
-- avoid huge notes without headings.
+Use `--mode bm25` for exact terms:
 
-Bad signals:
-
-- `raw/` folders full of uncleaned files;
-- pages without titles or structure;
-- repeated copies of the same document;
-- encyclopedia-style notes with tens of thousands of characters;
-- imported documents with broken layout or noisy OCR.
-
-## Agent Roles
-
-When the platform supports it, separate responsibilities into agents or
-sub-agents with isolated context. The goal is to prevent the main agent from
-loading too much context.
-
-### Orchestrator Agent
-
-Responsibilities:
-
-- understand the user request;
-- choose the search mode;
-- delegate bounded tasks to sub-agents;
-- receive short summaries;
-- produce the final answer with citations.
-
-It never reads the whole vault.
-
-### Ingestor Agent
-
-Responsibilities:
-
-- convert and clean source documents before adding them to the vault;
-- propose Markdown structure;
-- detect duplicates, noise, bad OCR, and irrelevant sections;
-- modify the vault only when the user explicitly asked for it.
-
-Expected output:
-
-- list of processed documents;
-- proposed paths;
-- quality risks;
-- performed or pending operations.
-
-### Librarian Agent
-
-Responsibilities:
-
-- maintain `.obsidian-kb.toml`;
-- run `obsidian-kb index`, `doctor`, and `stats`;
-- verify that the index is fresh;
-- report exclusions, config errors, and missing embeddings.
-
-It should not summarize domain content unless needed for diagnostics.
-
-### Retrieval Agent
-
-Responsibilities:
-
-- formulate one or more queries;
-- use the correct search mode;
-- read only necessary chunks with `show`;
-- return a short sourced summary.
-
-Expected output:
-
-- queries run;
-- mode used;
-- chunk IDs consulted;
-- paths and headings;
-- relevant facts;
-- uncertainties.
-
-### Answer Agent
-
-Responsibilities:
-
-- merge retrieval results;
-- distinguish sourced facts, hypotheses, and gaps;
-- answer clearly without context bloat;
-- cite files and headings.
-
-## Choosing the Search Mode
-
-Use `--mode bm25` for:
-
-- exact names;
+- note titles;
+- project names;
 - commands;
-- errors;
+- error messages;
 - APIs;
-- classes;
+- class or function names;
 - acronyms;
-- file paths;
-- exact titles.
-
-Example:
+- file names.
 
 ```bash
 obsidian-kb search "Service Connect TLS App Mesh" --mode bm25 --top 5 --json
 ```
 
-Use `--mode vector` for:
+Use `--mode vector` for vague or semantic search:
 
-- vague questions;
-- concepts without exact vocabulary;
-- reformulation;
-- nearby ideas.
-
-Example:
+- half-remembered ideas;
+- synonyms;
+- conceptual reformulations;
+- questions where exact vocabulary is unknown.
 
 ```bash
 obsidian-kb search "how to avoid overloading an agent context" --mode vector --top 5 --json
 ```
 
-Use `--mode hybrid --expand-graph` for:
-
-- conceptual questions;
-- topic exploration;
-- cases that need exact words, meaning, and linked notes.
-
-Example:
+Use `--mode hybrid --expand-graph` for conceptual questions that may benefit
+from both meaning, exact terms, and linked notes:
 
 ```bash
 obsidian-kb search "Obsidian as a local RAG knowledge base" --mode hybrid --expand-graph --top 8 --json
 ```
 
-Graph expansion is a recall aid, not a source of authority. A neighbor note
-should only be read when its title, heading, tags, or snippet make it relevant
-to the user question.
+Graph expansion is a recall aid, not proof. Read a graph-expanded neighbor only
+when its path, title, heading, tags, or snippet is clearly relevant.
 
-For compact agent context, add bounded source text directly to JSON results:
+## Compact Context For Agents
+
+Preferred first pass:
 
 ```bash
-obsidian-kb search "Obsidian as a local RAG knowledge base" --mode hybrid --expand-graph --top 5 --include-text --max-chars 1200 --json
+obsidian-kb search "query" --mode hybrid --expand-graph --top 5 --include-text --max-chars 1200 --json
 ```
 
-Use `--include-text` only with `--json`. `--max-chars` limits included text per
-chunk; `--max-chars 0` includes the full chunk text. Prefer a bounded value for
-agent workflows unless the user explicitly needs full chunk content.
+Rules:
 
-Add `--vault /path/to/Vault` only when the current directory does not contain
-the relevant `.obsidian-kb.toml` and no `--config` path is provided.
+- Use `--include-text` only with `--json`.
+- Keep `--max-chars` bounded for normal agent workflows.
+- Use `--max-chars 0` only when the user explicitly needs the full chunk text.
+- Start with 3 to 5 chunks for simple questions.
+- Use up to 10 chunks for cross-cutting questions.
+- Limit graph-expanded neighbor reads to 2 unless clearly needed.
+- Reformulate the query before expanding context aggressively.
 
-## Reading Chunks
-
-`search --json` returns enough metadata to select and cite likely sources:
-paths, headings, line ranges, tags, snippets, chunk IDs, and ranking evidence.
-When `--include-text` is used, it can also return compact chunk text.
-
-Use `show` after search when:
-
-- the snippet and included text are insufficient for a sourced answer;
-- precise editing or verification needs the full chunk;
-- the user asks for exact wording beyond the included text limit;
-- the answer depends on context near the chunk boundaries.
+Use `show` when the search output is not enough:
 
 ```bash
 obsidian-kb show <chunk-id> --json
 ```
 
-Reading discipline:
+Open a full Markdown file only after search has identified the file and there is
+a clear reason, such as editing, checking nearby context, or verifying exact
+wording outside the chunk.
 
-- start with the top 3 to 5 chunks;
-- use `search --include-text --max-chars 1200 --json` for a compact first pass;
-- increase only if the answer remains ambiguous;
-- prefer several short chunks over a full large document;
-- stop reading when the necessary facts are sufficiently verified;
-- do not open a full file unless there is a clear reason.
+## Search Result Fields
 
-Every answer should cite at least:
-
-- note path;
-- heading or heading path;
-- extracted fact.
-
-## Context Management
-
-Long context can degrade answer quality. Apply these default limits:
-
-- maximum 5 chunks for a simple question;
-- maximum 10 chunks for a cross-cutting question;
-- maximum 2 graph-expanded neighbor notes, unless explicitly needed;
-- no full-document insertion into the main prompt;
-- no global vault summary without staged retrieval.
-
-If results are poor, reformulate the query instead of loading more documents.
-
-## Retrieval Explainability
-
-JSON search results expose fields such as:
+JSON search results are designed for explainable retrieval. Use these fields:
 
 - `final_rank` and `final_score`;
 - `bm25_rank` and `bm25_score`;
@@ -478,55 +340,39 @@ JSON search results expose fields such as:
 - `start_line` and `end_line`;
 - `tags`;
 - `snippet`;
-- `text`, only when `--include-text` is set;
-- `chunk_id`.
+- `chunk_id`;
+- `text`, when `--include-text` is set.
 
-Use these fields to explain why a passage was read. Do not confuse final score
-with factual certainty: a good rank signals likely relevance, not truth.
+A high score means likely relevance, not factual certainty. Verify facts from
+the chunk text before answering.
 
-## Reranking
+## Answering Workflow
 
-In the current project, reranking is Reciprocal Rank Fusion between BM25 and
-vector search. This is intentionally simple, local, and explainable.
-
-Do not claim that a neural cross-encoder reranker already exists in
-`obsidian-kb`.
-
-If a true reranker is added later, it must respect these constraints:
-
-- local-first;
-- no hosted LLM API;
-- explainable results;
-- tests on a small fixture vault;
-- clear fallback to BM25/vector/RRF.
-
-## Workflow for Answering a Question
-
-Standard procedure:
+For a content question:
 
 1. Classify the question: exact, vague, or conceptual.
-2. Run `obsidian-kb search` with the appropriate mode.
-3. Inspect titles, headings, line ranges, tags, snippets, and scores.
-4. If compact context is enough, use `--include-text`; otherwise read the best
-   chunks with `obsidian-kb show`.
-5. Run a more precise query if the chunks are insufficient.
-6. Answer with citations.
-7. Mention limitations when sources do not cover the full question.
+2. Run one targeted `obsidian-kb search`.
+3. Inspect paths, headings, snippets, line ranges, and scores.
+4. Use included text if enough; otherwise read selected chunks with `show`.
+5. If results are weak, reformulate once or switch search mode.
+6. Answer from the retrieved excerpts.
+7. Cite path, heading, and line range.
+8. State gaps when retrieved sources do not fully answer the question.
 
-Internal output template for the Retrieval Agent:
+Do not fabricate citations. Prefer a partial sourced answer over a broad
+unsourced answer.
+
+Useful retrieval summary format:
 
 ```text
 Queries:
 - "..."
 
-Mode:
+Modes:
 - hybrid --expand-graph
 
-Chunks read:
-- <chunk-id> - path - heading
-
-Search metadata:
-- lines <start>-<end> - tags [...]
+Chunks consulted:
+- <chunk-id> | path | heading | lines <start>-<end>
 
 Facts:
 - ...
@@ -535,29 +381,67 @@ Uncertainties:
 - ...
 
 Sources to cite:
-- path - heading
+- path | heading | lines
 ```
 
-## Workflow for Building the Initial Knowledge Base
+## Ingestion Guidance
 
-Complete procedure:
+`obsidian-kb` indexes Markdown. PDFs, scans, HTML exports, office documents, and
+image-heavy sources should be converted to clean Markdown before indexing.
 
-1. Confirm the vault path.
-2. Run `obsidian-kb init --vault <vault>` if the config does not exist.
-3. Check `.obsidian-kb.toml`, especially `exclude_globs`.
-4. Run `obsidian-kb index --vault <vault>`.
-5. Run `obsidian-kb doctor --vault <vault>`.
-6. Run `obsidian-kb stats --vault <vault> --json`.
-7. Run three smoke-test searches:
-   - an exact name with `--mode bm25`;
-   - a vague question with `--mode vector`;
-   - a conceptual question with `--mode hybrid --expand-graph`.
-8. Read chunks returned by each smoke test.
-9. Report problems: poorly structured notes, oversized chunks, missing
-   embeddings, incorrect exclusions, or noisy results.
-10. Propose targeted fixes without modifying the vault unless approved.
+For an ingestion agent:
 
-## Maintenance
+1. Identify source type: Markdown, text PDF, OCR scan, image, table, web export,
+   or office document.
+2. Convert to structured Markdown.
+3. Remove noise: navigation, duplicated footers, ads, irrelevant legal blocks,
+   broken OCR fragments, repeated text.
+4. Preserve structure: title, headings, lists, tables, code blocks, quotations,
+   and source references.
+5. Describe useful images in Markdown when they contain information.
+6. Preserve provenance: source URL, local path, author, date, and import date
+   when available.
+7. Avoid over-summarizing at ingestion time. Notes must remain verifiable.
+
+Do not blindly route ingestion through an LLM if it increases cost, noise, or
+errors. For a few important documents, manual cleanup can be better than a large
+automated conversion.
+
+## Vault Quality Hints
+
+The vault should remain useful to humans. A simple structure is enough:
+
+```text
+Vault/
+  Inbox/
+  Sources/
+  Notes/
+  Projects/
+  Index/
+```
+
+Good signals:
+
+- each note has a clear title;
+- headings divide ideas into searchable sections;
+- tags are stable and not overly granular;
+- aliases cover exact names, acronyms, and common variants;
+- wikilinks represent meaningful relationships;
+- large imported documents are split or structured with headings.
+
+Bad signals:
+
+- raw folders full of uncleaned imports;
+- pages without headings;
+- repeated copies of the same document;
+- long encyclopedia-style notes with many unrelated topics;
+- broken OCR or layout artifacts;
+- contradictory duplicates.
+
+Agents may report these problems and propose fixes, but must not rewrite the
+vault without approval.
+
+## Maintenance Checklist
 
 When the vault changes:
 
@@ -566,87 +450,109 @@ obsidian-kb index --changed-only
 obsidian-kb doctor
 ```
 
-When config, chunking, or the embedding model changes:
+When config, chunking, or embedding model changes:
 
 ```bash
 obsidian-kb index --rebuild
 obsidian-kb doctor
 ```
 
-For diagnostics:
+When search quality is poor:
 
-```bash
-obsidian-kb stats --json
-obsidian-kb graph "Note name" --depth 1 --json
-obsidian-kb doctor --json
+1. Run `doctor --json`.
+2. Run `stats --json`.
+3. Try one BM25 query with an exact known term.
+4. Try one vector query with a paraphrase.
+5. Try one hybrid graph query for a broad topic.
+6. Inspect whether failures come from config, missing embeddings, note structure,
+   an index that needs refresh, or a bad query.
+
+Do not compensate for poor retrieval by loading more and more files.
+
+## Agent Role Split
+
+When the platform supports sub-agents, keep responsibilities separate.
+
+Orchestrator:
+
+- understands the user request;
+- chooses search mode;
+- asks for indexing or diagnostics when needed;
+- produces final answer with citations.
+
+Librarian:
+
+- manages `.obsidian-kb.toml`;
+- runs `index`, `doctor`, and `stats`;
+- reports freshness, exclusions, and embedding status;
+- does not summarize domain content unless needed for diagnostics.
+
+Retriever:
+
+- formulates targeted queries;
+- reads only selected chunks;
+- returns paths, headings, line ranges, facts, and uncertainties.
+
+Ingestor:
+
+- converts documents to clean Markdown;
+- identifies structure and provenance;
+- modifies the vault only with explicit approval.
+
+Answerer:
+
+- answers only from retrieved excerpts;
+- separates sourced facts, hypotheses, and gaps;
+- requests one targeted additional search if excerpts are insufficient.
+
+## Short Prompts
+
+Retrieval agent:
+
+```text
+You are a retrieval agent for an Obsidian vault indexed by obsidian-kb. Never
+read the whole vault. For content questions, start with obsidian-kb search. Use
+bm25 for exact names, vector for vague concepts, and hybrid --expand-graph for
+conceptual questions. Prefer search --include-text --max-chars 1200 --json for
+compact context. Use obsidian-kb show only for selected chunks. Return chunk IDs,
+paths, headings, line ranges, facts, and uncertainties.
 ```
 
-Add `--vault /path/to/Vault` to these commands only when running outside the
-directory that contains the relevant `.obsidian-kb.toml`.
+Answer agent:
 
-## Quality Criteria
+```text
+Answer only from excerpts provided by retrieval. Cite paths, headings, and line
+ranges. Separate sourced facts from hypotheses and gaps. If excerpts are
+insufficient, request one targeted additional search.
+```
 
-A knowledge base is usable when:
+Librarian agent:
 
-- `doctor` reports no blocking issue;
-- exact searches find expected names;
-- vector searches find reformulated ideas;
-- hybrid searches return coherent chunks;
-- snippets are readable;
-- headings provide useful context;
-- graph-expanded neighbor notes are useful and few;
-- final answers cite consulted sources.
+```text
+Maintain an Obsidian vault index with obsidian-kb. Prefer a vault-local
+.obsidian-kb.toml created by running init from inside the vault. Run index,
+doctor, stats, and smoke-test searches. Report config, freshness, embedding,
+link, and note-structure issues. Do not modify notes without approval.
+```
 
-It is not yet healthy when:
+Ingestion agent:
 
-- the agent must open many full files;
-- top results are noise;
-- chunks mix several topics without headings;
-- imported documents contain broken layout;
-- citations are impossible or vague;
-- the same information exists in multiple contradictory notes.
+```text
+Prepare sources for an Obsidian vault. Convert them to clean, structured
+Markdown with title, headings, provenance, and useful source references. Remove
+layout noise and OCR artifacts. Do not over-summarize. Do not modify the vault
+without explicit approval.
+```
 
-## Limits to Respect
+## Limits
 
-`obsidian-kb` is a local retrieval layer. It must not become:
+`obsidian-kb` must not become:
 
-- a tool that automatically rewrites the vault;
-- a pipeline of hosted LLM API calls;
+- an automatic vault rewriter;
+- a hosted LLM pipeline;
 - a remote vector database;
 - a system of unverifiable global summaries;
-- an excuse to load hundreds of pages into context.
+- a reason to load hundreds of pages into context.
 
-The value comes from selection, not volume.
-
-## Short Prompts for Agents
-
-System prompt for a retrieval agent:
-
-```text
-You are a retrieval agent for an Obsidian vault indexed by obsidian-kb.
-Never read the whole vault. For content questions about the vault, always start
-with obsidian-kb search. For maintenance, freshness, or diagnostic tasks, start
-with doctor, stats, or index as appropriate.
-Use bm25 for exact names, vector for vague questions, and hybrid --expand-graph
-for conceptual questions. For compact context, use search --include-text
---max-chars 1200 --json. Read only the best chunks with obsidian-kb show when
-the search text or snippet is insufficient. Return a short summary with chunk
-IDs, paths, headings, line ranges, tags, facts, and uncertainties.
-```
-
-System prompt for an answer agent:
-
-```text
-Answer only from the excerpts provided by the retrieval agent. Separate sourced
-facts, hypotheses, and gaps. Cite paths and headings. Do not add unverified
-context. If the excerpts are insufficient, request one targeted additional
-search.
-```
-
-System prompt for an ingestion agent:
-
-```text
-You prepare documents for an Obsidian vault. Convert sources to clean Markdown,
-preserve logical structure, remove noise, keep source references, and flag
-uncertain sections. Do not modify the vault without explicit approval.
-```
+Keep the source of truth in Obsidian Markdown. Keep retrieval local. Keep agent
+context small and cited.
