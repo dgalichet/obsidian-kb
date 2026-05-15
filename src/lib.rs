@@ -157,6 +157,9 @@ pub fn run() -> Result<()> {
                 std::process::exit(2);
             }
         }
+        Command::Version => {
+            println!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
+        }
     }
 
     Ok(())
