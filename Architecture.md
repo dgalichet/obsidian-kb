@@ -191,6 +191,10 @@ phase timings such as BM25 search, vector search, graph expansion, SQLite writes
 Tantivy rebuilds, and embedding rebuilds. Search queries are not written unless
 `include_query = true`.
 
+Vector search records `vector_ms` as the total vector phase and also breaks it
+down into embedder initialization, query embedding, stored embedding loading, and
+cosine scoring timings.
+
 Config resolution order:
 
 1. `--config /path/to/.obsidian-kb.toml`, when provided.

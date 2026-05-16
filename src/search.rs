@@ -74,9 +74,13 @@ pub fn search_with_benchmark(
     let vector = if matches!(options.mode, SearchMode::Vector | SearchMode::Hybrid)
         && config.embeddings.enabled
     {
-        benchmark::time_phase(&mut benchmark, "vector_ms", || {
-            vector_search::search(&db, config, query, config.search.vector_candidates)
-        })?
+        vector_search::search_with_benchmark(
+            &db,
+            config,
+            query,
+            config.search.vector_candidates,
+            benchmark.as_deref_mut(),
+        )?
     } else {
         Vec::new()
     };
