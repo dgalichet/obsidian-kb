@@ -50,19 +50,19 @@ jobs:
           key: ${{ matrix.target }}
           cache-bin: false
 
-      - name: Verify tag matches package version
+      - name: Prepare release version
         shell: bash
         run: |
           set -euo pipefail
 
-          version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)"
-          expected_tag="v${version}"
-
-          if [[ "${RELEASE_TAG}" != "${expected_tag}" ]]; then
-            echo "Release tag ${RELEASE_TAG} does not match Cargo.toml version ${version}."
-            echo "Expected ${expected_tag}."
+          version="${RELEASE_TAG#v}"
+          if [[ "${version}" == "${RELEASE_TAG}" || ! "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Release tag ${RELEASE_TAG} must look like vX.Y.Z."
             exit 1
           fi
+
+          echo "OBSIDIAN_KB_VERSION=${version}" >> "${GITHUB_ENV}"
+          echo "Building obsidian-kb ${version} from ${RELEASE_TAG}."
 
       - name: Test
         run: cargo test --locked
@@ -109,6 +109,7 @@ jobs:
           otool -L "${staging}/${BIN_NAME}" || true
 
           "${staging}/${BIN_NAME}" --help
+          "${staging}/${BIN_NAME}" version | grep -Fx "${BIN_NAME} ${OBSIDIAN_KB_VERSION}"
 
           smoke_vault="${RUNNER_TEMP}/sample_vault"
           cp -R tests/fixtures/sample_vault "${smoke_vault}"

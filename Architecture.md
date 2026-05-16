@@ -265,12 +265,13 @@ failure, keep indexing idempotent, and keep search explainable.
 
 ## Release
 
-Releases are created from version tags. Update `Cargo.toml`, commit the change,
-then create and push a matching tag:
+Releases are created from version tags. `Cargo.toml` stays on the local
+development version `0.0.0-snapshot`; the release workflow derives the published
+binary version from the pushed tag and injects it at build time.
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v1.2.3
+git push origin v1.2.3
 ```
 
 The release workflow builds the `aarch64-apple-darwin` archive, publishes it to

@@ -21,6 +21,7 @@ pub mod search;
 pub mod tantivy_index;
 pub mod vault;
 pub mod vector_search;
+pub mod version;
 
 use anyhow::{Context, Result, bail};
 use clap::Parser;
@@ -156,7 +157,7 @@ pub fn run() -> Result<()> {
             }
         }
         Command::Version => {
-            println!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
+            println!("{} {}", env!("CARGO_PKG_NAME"), version::version());
         }
     }
 
