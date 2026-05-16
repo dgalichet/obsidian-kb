@@ -62,7 +62,7 @@ pub struct IndexArgs {
 
 #[derive(Debug, Args)]
 pub struct SearchArgs {
-    #[arg(value_name = "QUERY", num_args = 1..)]
+    #[arg(value_name = "QUERY", num_args = 0..)]
     pub query: Vec<String>,
 
     #[arg(long, help = "Path to the Obsidian vault")]
@@ -73,6 +73,20 @@ pub struct SearchArgs {
 
     #[arg(long, alias = "limit", default_value_t = 10)]
     pub top: usize,
+
+    #[arg(
+        long = "tag",
+        value_name = "TAG",
+        help = "Require an indexed tag; repeat for AND filters"
+    )]
+    pub tags: Vec<String>,
+
+    #[arg(
+        long = "property",
+        value_name = "KEY=VALUE",
+        help = "Require an indexed frontmatter property; repeat for AND filters"
+    )]
+    pub properties: Vec<String>,
 
     #[arg(
         long = "expand-graph",

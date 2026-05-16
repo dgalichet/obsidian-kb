@@ -38,6 +38,8 @@ pub struct IndexConfig {
     pub chunk_overlap_chars: usize,
     pub max_chunk_chars: usize,
     pub remove_diacritics: bool,
+    #[serde(default)]
+    pub properties: PropertyIndexConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -52,6 +54,29 @@ pub struct SearchConfig {
     pub graph_weight: f32,
     pub graph_depth: usize,
     pub graph_max_neighbors: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PropertyIndexConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_property_filter_keys")]
+    pub filter_keys: Vec<String>,
+    #[serde(default = "default_property_ignored_keys")]
+    pub ignored_keys: Vec<String>,
+    #[serde(default = "default_property_max_value_chars")]
+    pub max_value_chars: usize,
+}
+
+impl Default for PropertyIndexConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            filter_keys: default_property_filter_keys(),
+            ignored_keys: default_property_ignored_keys(),
+            max_value_chars: default_property_max_value_chars(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -151,6 +176,7 @@ impl AppConfig {
                 chunk_overlap_chars: 300,
                 max_chunk_chars: 5000,
                 remove_diacritics: true,
+                properties: PropertyIndexConfig::default(),
             },
             search: SearchConfig {
                 default_mode: "hybrid".to_string(),
@@ -256,6 +282,25 @@ fn default_embedding_cache_dir() -> PathBuf {
         .unwrap_or_else(std::env::temp_dir)
         .join("obsidian-kb")
         .join("models")
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_property_filter_keys() -> Vec<String> {
+    vec!["*".to_string()]
+}
+
+fn default_property_ignored_keys() -> Vec<String> {
+    ["cssclasses", "template", "id", "uuid", "publish", "dg-*"]
+        .into_iter()
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
+fn default_property_max_value_chars() -> usize {
+    200
 }
 
 pub fn save_config(config: &AppConfig) -> Result<()> {

@@ -7,12 +7,13 @@ use crate::models::{ChunkRecord, DoctorReport, GraphView, IndexStats, SearchHit,
 
 pub fn print_index_summary(stats: &IndexStats, graph_warnings: usize, embeddings: usize) {
     println!(
-        "{} notes, {} chunks, {} links, {} aliases, {} tags",
+        "{} notes, {} chunks, {} links, {} aliases, {} tags, {} properties",
         stats.notes.green(),
         stats.chunks.green(),
         stats.links.green(),
         stats.aliases.green(),
-        stats.tags.green()
+        stats.tags.green(),
+        stats.properties.green()
     );
     println!(
         "{} changed, {} unchanged, {} deleted",
@@ -154,6 +155,7 @@ pub fn print_stats(report: &StatsReport) {
     table.add_row(vec!["chunks", &report.chunks.to_string()]);
     table.add_row(vec!["aliases", &report.aliases.to_string()]);
     table.add_row(vec!["tags", &report.tags.to_string()]);
+    table.add_row(vec!["properties", &report.properties.to_string()]);
     table.add_row(vec!["links", &report.links.to_string()]);
     table.add_row(vec![
         "unresolved_links",

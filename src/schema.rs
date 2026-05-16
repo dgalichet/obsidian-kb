@@ -58,6 +58,15 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             tag TEXT NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS properties (
+            file_id INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+            key TEXT NOT NULL,
+            value_text TEXT NOT NULL,
+            value_norm TEXT NOT NULL,
+            value_type TEXT NOT NULL,
+            value_json TEXT
+        );
+
         CREATE TABLE IF NOT EXISTS aliases (
             file_id INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
             alias TEXT NOT NULL
@@ -74,6 +83,8 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_links_target_file_id ON links(target_file_id);
         CREATE INDEX IF NOT EXISTS idx_tags_file_id ON tags(file_id);
         CREATE INDEX IF NOT EXISTS idx_tags_tag ON tags(tag);
+        CREATE INDEX IF NOT EXISTS idx_properties_file_id ON properties(file_id);
+        CREATE INDEX IF NOT EXISTS idx_properties_key_value ON properties(key, value_norm);
         CREATE INDEX IF NOT EXISTS idx_aliases_file_id ON aliases(file_id);
         CREATE INDEX IF NOT EXISTS idx_aliases_alias ON aliases(alias);
         "#,
@@ -98,6 +109,7 @@ fn drop_app_tables(conn: &Connection) -> Result<()> {
         DROP TABLE IF EXISTS embeddings;
         DROP TABLE IF EXISTS links;
         DROP TABLE IF EXISTS tags;
+        DROP TABLE IF EXISTS properties;
         DROP TABLE IF EXISTS aliases;
         DROP TABLE IF EXISTS chunks;
         DROP TABLE IF EXISTS notes;

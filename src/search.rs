@@ -5,19 +5,20 @@ use crate::benchmark::{self, BenchmarkRun};
 use crate::config::AppConfig;
 use crate::db::Db;
 use crate::error::KbError;
-use crate::models::{SearchHit, SearchMode};
+use crate::models::{PropertyFilter, SearchFilters, SearchHit, SearchMode};
 use crate::paths::KbPaths;
 use crate::scoring::{FusedCandidate, reciprocal_rank_fusion};
-use crate::{tantivy_index, vector_search};
+use crate::{properties, tantivy_index, vector_search};
 
 /// User-facing search options shared by CLI and library calls.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct SearchOptions {
     pub mode: SearchMode,
     pub limit: usize,
     pub graph: bool,
     pub include_text: bool,
     pub max_chars: usize,
+    pub filters: SearchFilters,
 }
 
 pub fn search(
@@ -38,9 +39,25 @@ pub fn search(
             graph,
             include_text,
             max_chars,
+            filters: SearchFilters::default(),
         },
         None,
     )
+}
+
+pub fn parse_property_filter(value: &str) -> Result<PropertyFilter> {
+    let Some((key, property_value)) = value.split_once('=') else {
+        bail!("property filters must use KEY=VALUE syntax");
+    };
+    let key = properties::normalize_key(key);
+    let property_value = property_value.trim();
+    if key.is_empty() || property_value.is_empty() {
+        bail!("property filters must include a non-empty key and value");
+    }
+    Ok(PropertyFilter {
+        key,
+        value: property_value.to_string(),
+    })
 }
 
 /// Executes a search and optionally records phase timings into a benchmark run.
@@ -62,7 +79,7 @@ pub fn search_with_vector_cache(
     vector_cache: Option<&mut vector_search::VectorSearchCache>,
 ) -> Result<Vec<SearchHit>> {
     let query = query.trim();
-    if query.is_empty() {
+    if query.is_empty() && options.filters.is_empty() {
         return Err(KbError::EmptyQuery.into());
     }
     let paths = KbPaths::from_config(config);
@@ -70,19 +87,24 @@ pub fn search_with_vector_cache(
         return Err(KbError::MissingIndex.into());
     }
     let db = benchmark::time_phase(&mut benchmark, "open_db_ms", || Db::open(&paths.db_path))?;
-    let lexical = if matches!(options.mode, SearchMode::Bm25 | SearchMode::Hybrid) {
-        benchmark::time_phase(&mut benchmark, "bm25_ms", || {
-            tantivy_index::search(
-                &paths.tantivy_dir,
-                query,
-                config.search.bm25_candidates,
-                config.index.remove_diacritics,
-            )
-        })?
-    } else {
-        Vec::new()
-    };
-    let vector = if matches!(options.mode, SearchMode::Vector | SearchMode::Hybrid)
+    let matching_file_ids = benchmark::time_phase(&mut benchmark, "filter_ms", || {
+        db.matching_file_ids(&options.filters)
+    })?;
+    let lexical =
+        if !query.is_empty() && matches!(options.mode, SearchMode::Bm25 | SearchMode::Hybrid) {
+            benchmark::time_phase(&mut benchmark, "bm25_ms", || {
+                tantivy_index::search(
+                    &paths.tantivy_dir,
+                    query,
+                    config.search.bm25_candidates,
+                    config.index.remove_diacritics,
+                )
+            })?
+        } else {
+            Vec::new()
+        };
+    let vector = if !query.is_empty()
+        && matches!(options.mode, SearchMode::Vector | SearchMode::Hybrid)
         && config.embeddings.enabled
     {
         if let Some(vector_cache) = vector_cache {
@@ -105,23 +127,36 @@ pub fn search_with_vector_cache(
     } else {
         Vec::new()
     };
-    if matches!(options.mode, SearchMode::Vector) && vector.is_empty() {
+    if !query.is_empty() && matches!(options.mode, SearchMode::Vector) && vector.is_empty() {
         bail!("no vector results; run `obsidian-kb index` with embeddings enabled");
     }
 
-    let mut fused = benchmark::time_phase(&mut benchmark, "fusion_ms", || {
-        reciprocal_rank_fusion(
-            &lexical,
-            &vector,
-            config.search.rrf_k,
-            config.search.bm25_weight,
-            config.search.vector_weight,
-        )
-    });
+    let mut fused = if query.is_empty() {
+        let file_ids = matching_file_ids.as_ref().cloned().unwrap_or_default();
+        benchmark::time_phase(&mut benchmark, "filter_candidates_ms", || {
+            filter_only_candidates(&db, &file_ids)
+        })?
+    } else {
+        benchmark::time_phase(&mut benchmark, "fusion_ms", || {
+            reciprocal_rank_fusion(
+                &lexical,
+                &vector,
+                config.search.rrf_k,
+                config.search.bm25_weight,
+                config.search.vector_weight,
+            )
+        })
+    };
+
+    if let Some(file_ids) = matching_file_ids.as_ref() {
+        benchmark::time_phase(&mut benchmark, "apply_filters_ms", || {
+            filter_candidates(&db, &mut fused, file_ids)
+        })?;
+    }
 
     if options.graph {
         benchmark::time_phase(&mut benchmark, "graph_expand_ms", || {
-            expand_graph(&db, &mut fused, config)
+            expand_graph(&db, &mut fused, config, matching_file_ids.as_ref())
         })?;
     }
 
@@ -172,7 +207,51 @@ pub fn search_with_vector_cache(
     })
 }
 
-fn expand_graph(db: &Db, fused: &mut Vec<FusedCandidate>, config: &AppConfig) -> Result<()> {
+fn filter_only_candidates(
+    db: &Db,
+    file_ids: &std::collections::BTreeSet<i64>,
+) -> Result<Vec<FusedCandidate>> {
+    let chunks = db.chunks_matching_file_ids(file_ids)?;
+    Ok(chunks
+        .into_iter()
+        .enumerate()
+        .map(|(index, chunk)| FusedCandidate {
+            chunk_id: chunk.chunk_id,
+            score: 1.0 / (index + 1) as f32,
+            lexical_rank: None,
+            lexical_score: None,
+            vector_rank: None,
+            vector_score: None,
+            graph_boost: 0.0,
+            source: "filter".to_string(),
+            graph: false,
+        })
+        .collect())
+}
+
+fn filter_candidates(
+    db: &Db,
+    fused: &mut Vec<FusedCandidate>,
+    file_ids: &std::collections::BTreeSet<i64>,
+) -> Result<()> {
+    let mut kept = Vec::with_capacity(fused.len());
+    for candidate in fused.drain(..) {
+        if let Some(chunk) = db.load_chunk(&candidate.chunk_id)?
+            && file_ids.contains(&chunk.file_id)
+        {
+            kept.push(candidate);
+        }
+    }
+    *fused = kept;
+    Ok(())
+}
+
+fn expand_graph(
+    db: &Db,
+    fused: &mut Vec<FusedCandidate>,
+    config: &AppConfig,
+    allowed_file_ids: Option<&std::collections::BTreeSet<i64>>,
+) -> Result<()> {
     let best = fused
         .first()
         .map(|candidate| candidate.score)
@@ -211,6 +290,11 @@ fn expand_graph(db: &Db, fused: &mut Vec<FusedCandidate>, config: &AppConfig) ->
             let Some(chunk) = db.first_chunk_for_note(&neighbor)? else {
                 continue;
             };
+            if let Some(file_ids) = allowed_file_ids
+                && !file_ids.contains(&chunk.file_id)
+            {
+                continue;
+            }
             if !seen_chunks.insert(chunk.chunk_id.clone()) {
                 continue;
             }

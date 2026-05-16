@@ -10,6 +10,7 @@ use crate::config::AppConfig;
 use crate::frontmatter;
 use crate::markdown;
 use crate::models::ParsedNote;
+use crate::properties;
 
 pub fn load_vault(config: &AppConfig) -> Result<Vec<ParsedNote>> {
     let markdown_paths = markdown_paths(config)?;
@@ -122,6 +123,7 @@ pub fn parse_note_content(
         .into_iter()
         .filter(|tag| !tag.is_empty())
         .collect::<Vec<_>>();
+    let properties = properties::extract(&parsed_frontmatter.metadata, &config.index.properties);
     let metadata_title = frontmatter::string_field(&parsed_frontmatter.metadata, "title");
     let title = markdown::title_from(metadata_title, &parsed_frontmatter.body, relative_path);
     let body_line_offset = parsed_frontmatter.body_start_line.saturating_sub(1);
@@ -159,6 +161,7 @@ pub fn parse_note_content(
         body: parsed_frontmatter.body,
         aliases,
         tags,
+        properties,
         links,
         headings,
         chunks,
