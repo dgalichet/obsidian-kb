@@ -124,13 +124,21 @@ pub fn parse_note_content(
         .collect::<Vec<_>>();
     let metadata_title = frontmatter::string_field(&parsed_frontmatter.metadata, "title");
     let title = markdown::title_from(metadata_title, &parsed_frontmatter.body, relative_path);
-    let headings = markdown::extract_headings(&parsed_frontmatter.body);
+    let body_line_offset = parsed_frontmatter.body_start_line.saturating_sub(1);
+    let headings = markdown::extract_headings(&parsed_frontmatter.body)
+        .into_iter()
+        .map(|mut heading| {
+            heading.line += body_line_offset;
+            heading
+        })
+        .collect::<Vec<_>>();
     let links = markdown::extract_wikilinks(&parsed_frontmatter.body);
-    let chunks = chunking::chunk_markdown(
+    let chunks = chunking::chunk_markdown_with_body_start_line(
         relative_path,
         &title,
         &tags,
         &parsed_frontmatter.body,
+        parsed_frontmatter.body_start_line,
         &headings,
         &config.index,
     );

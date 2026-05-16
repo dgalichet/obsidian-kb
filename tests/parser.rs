@@ -25,6 +25,31 @@ fn parses_frontmatter_tags_aliases_and_ignores_code_links() {
 }
 
 #[test]
+fn chunk_line_ranges_include_frontmatter_offset() {
+    let config =
+        AppConfig::default_for_vault(Path::new("tests/fixtures/sample_vault"), None).unwrap();
+    let content = "---\ntitle: Traceable note\n---\n# Intro\n\nFirst paragraph.\n\n## Details\n\nSecond paragraph.\n";
+    let note = vault::parse_note_content(
+        Path::new("tests/fixtures/sample_vault"),
+        Path::new("tests/fixtures/sample_vault/frontmatter-lines.md").to_path_buf(),
+        "frontmatter-lines.md",
+        content,
+        0,
+        content.len() as u64,
+        &config,
+    )
+    .unwrap();
+
+    assert_eq!(note.headings[0].line, 4);
+    assert_eq!(note.headings[1].line, 8);
+    assert_eq!(note.chunks.len(), 2);
+    assert_eq!(note.chunks[0].start_line, 4);
+    assert_eq!(note.chunks[0].end_line, 7);
+    assert_eq!(note.chunks[1].start_line, 8);
+    assert_eq!(note.chunks[1].end_line, 10);
+}
+
+#[test]
 fn extracts_wikilink_anchor_and_display() {
     let links = markdown::extract_wikilinks("[[ai/rag#Reciprocal Rank Fusion|RRF]]");
     assert_eq!(links.len(), 1);
