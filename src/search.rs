@@ -1,5 +1,5 @@
 use anyhow::{Result, bail};
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, VecDeque};
 
 use crate::config::AppConfig;
 use crate::db::Db;
@@ -128,9 +128,13 @@ fn expand_graph(db: &Db, fused: &mut Vec<FusedCandidate>, config: &AppConfig) ->
         let Some(seed_chunk) = db.load_chunk(&seed.chunk_id)? else {
             continue;
         };
-        let neighbors =
-            db.neighbor_paths(&seed_chunk.note_path, config.search.graph_max_neighbors)?;
-        for neighbor in neighbors {
+        let neighbors = graph_neighbors(
+            db,
+            &seed_chunk.note_path,
+            config.search.graph_depth,
+            config.search.graph_max_neighbors,
+        )?;
+        for (neighbor, depth) in neighbors {
             if seen_notes.contains(&neighbor) {
                 continue;
             }
@@ -140,7 +144,7 @@ fn expand_graph(db: &Db, fused: &mut Vec<FusedCandidate>, config: &AppConfig) ->
             if !seen_chunks.insert(chunk.chunk_id.clone()) {
                 continue;
             }
-            let score = (seed.score * config.search.graph_weight).min(cap);
+            let score = (seed.score * config.search.graph_weight.powi(depth as i32)).min(cap);
             fused.push(FusedCandidate {
                 chunk_id: chunk.chunk_id,
                 score,
@@ -156,6 +160,39 @@ fn expand_graph(db: &Db, fused: &mut Vec<FusedCandidate>, config: &AppConfig) ->
         }
     }
     Ok(())
+}
+
+fn graph_neighbors(
+    db: &Db,
+    seed_path: &str,
+    depth: usize,
+    max_neighbors: usize,
+) -> Result<Vec<(String, usize)>> {
+    if depth == 0 || max_neighbors == 0 {
+        return Ok(Vec::new());
+    }
+
+    let mut queue = VecDeque::from([(seed_path.to_string(), 0usize)]);
+    let mut seen = BTreeSet::from([seed_path.to_string()]);
+    let mut neighbors = Vec::new();
+
+    while let Some((path, current_depth)) = queue.pop_front() {
+        if current_depth >= depth {
+            continue;
+        }
+        let next_depth = current_depth + 1;
+        for neighbor in db.neighbor_paths(&path, max_neighbors)? {
+            if !seen.insert(neighbor.clone()) {
+                continue;
+            }
+            neighbors.push((neighbor.clone(), next_depth));
+            if next_depth < depth {
+                queue.push_back((neighbor, next_depth));
+            }
+        }
+    }
+
+    Ok(neighbors)
 }
 
 fn make_snippet(text: &str, max_chars: usize) -> String {

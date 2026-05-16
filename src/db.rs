@@ -239,15 +239,19 @@ impl Db {
             return Ok(Vec::new());
         };
         let mut stmt = self.conn.prepare(
-            "SELECT DISTINCT target.rel_path
-             FROM links
-             JOIN files target ON target.id = links.target_file_id
-             WHERE links.source_file_id = ?1
-             UNION
-             SELECT DISTINCT source.rel_path
-             FROM links
-             JOIN files source ON source.id = links.source_file_id
-             WHERE links.target_file_id = ?1
+            "SELECT rel_path
+             FROM (
+                SELECT DISTINCT target.rel_path AS rel_path
+                FROM links
+                JOIN files target ON target.id = links.target_file_id
+                WHERE links.source_file_id = ?1
+                UNION
+                SELECT DISTINCT source.rel_path AS rel_path
+                FROM links
+                JOIN files source ON source.id = links.source_file_id
+                WHERE links.target_file_id = ?1
+             )
+             ORDER BY rel_path
              LIMIT ?2",
         )?;
         let rows = stmt.query_map(params![file_id, limit as i64], |row| {
