@@ -10,3 +10,6 @@
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
+
+# Local Codex agent instructions
+AGENTS.md
