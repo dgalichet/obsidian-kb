@@ -1,6 +1,6 @@
 use anyhow::Result;
 use rayon::prelude::*;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use crate::benchmark::{self, BenchmarkRun};
 use crate::config::AppConfig;
@@ -65,52 +65,130 @@ pub fn search(
     search_with_benchmark(db, config, query, limit, None)
 }
 
+/// Keeps the local embedding model warm across multiple vector searches.
+#[derive(Default)]
+pub struct VectorSearchCache {
+    embedder: Option<FastEmbedder>,
+    model_key: Option<String>,
+    last_used: Option<Instant>,
+}
+
+impl VectorSearchCache {
+    /// Initializes the embedding model before the first search.
+    pub fn warm_up(&mut self, config: &AppConfig) -> Result<()> {
+        if self.embedder.is_none() {
+            let embedder = FastEmbedder::new(config)?;
+            self.model_key = Some(embedder.model_key());
+            self.embedder = Some(embedder);
+        }
+        self.last_used = Some(Instant::now());
+        Ok(())
+    }
+
+    /// Drops the cached embedding model and releases its memory.
+    pub fn unload(&mut self) -> bool {
+        let was_loaded = self.embedder.is_some();
+        self.embedder = None;
+        self.model_key = None;
+        self.last_used = None;
+        was_loaded
+    }
+
+    /// Drops the cached model when it has not been used within `timeout`.
+    pub fn unload_if_idle(&mut self, timeout: Duration) -> bool {
+        if timeout.is_zero() {
+            return false;
+        }
+        let Some(last_used) = self.last_used else {
+            return false;
+        };
+        if last_used.elapsed() >= timeout {
+            self.unload()
+        } else {
+            false
+        }
+    }
+
+    /// Returns whether the embedding model is currently loaded in memory.
+    pub fn is_loaded(&self) -> bool {
+        self.embedder.is_some()
+    }
+
+    /// Runs vector search using the cached model when available.
+    pub fn search_with_benchmark(
+        &mut self,
+        db: &Db,
+        config: &AppConfig,
+        query: &str,
+        limit: usize,
+        mut benchmark: Option<&mut BenchmarkRun>,
+    ) -> Result<Vec<SearchCandidate>> {
+        let started = Instant::now();
+        let result = (|| {
+            if self.embedder.is_none() {
+                let embedder =
+                    benchmark::time_phase(&mut benchmark, "vector_embedder_init_ms", || {
+                        FastEmbedder::new(config)
+                    })?;
+                self.model_key = Some(embedder.model_key());
+                self.embedder = Some(embedder);
+            } else if let Some(benchmark) = benchmark.as_deref_mut() {
+                benchmark.record_phase("vector_embedder_init_ms", Duration::ZERO);
+                benchmark.set_field("vector_embedder_cached", true);
+            }
+
+            let model_key = self
+                .model_key
+                .clone()
+                .unwrap_or_else(|| config.embedding_model_key());
+            let query = benchmark::time_phase(&mut benchmark, "vector_normalize_query_ms", || {
+                normalize_text(query, config.index.remove_diacritics)
+            });
+            let query_vector = {
+                let embedder = self
+                    .embedder
+                    .as_mut()
+                    .expect("vector embedder is initialized");
+                benchmark::time_phase(&mut benchmark, "vector_embed_query_ms", || {
+                    embedder.embed_query(&query)
+                })?
+            };
+            let embeddings =
+                benchmark::time_phase(&mut benchmark, "vector_load_embeddings_ms", || {
+                    db.load_embeddings(&model_key)
+                })?;
+            if let Some(benchmark) = benchmark.as_deref_mut() {
+                benchmark.set_field("vector_dimensions", query_vector.len());
+                benchmark.set_field("vector_embedding_count", embeddings.len());
+            }
+            let candidates =
+                benchmark::time_phase(&mut benchmark, "vector_score_embeddings_ms", || {
+                    score_embeddings(
+                        &query_vector,
+                        embeddings,
+                        config.embedding_min_cosine(),
+                        limit,
+                    )
+                });
+            self.last_used = Some(Instant::now());
+            Ok(candidates)
+        })();
+        if let Some(benchmark) = benchmark {
+            benchmark.record_phase("vector_ms", started.elapsed());
+        }
+        result
+    }
+}
+
 /// Runs vector search and optionally records detailed vector phase timings.
 pub fn search_with_benchmark(
     db: &Db,
     config: &AppConfig,
     query: &str,
     limit: usize,
-    mut benchmark: Option<&mut BenchmarkRun>,
+    benchmark: Option<&mut BenchmarkRun>,
 ) -> Result<Vec<SearchCandidate>> {
-    let started = Instant::now();
-    let result = (|| {
-        let mut embedder =
-            benchmark::time_phase(&mut benchmark, "vector_embedder_init_ms", || {
-                FastEmbedder::new(config)
-            })?;
-        let model_key = embedder.model_key();
-        let query = benchmark::time_phase(&mut benchmark, "vector_normalize_query_ms", || {
-            normalize_text(query, config.index.remove_diacritics)
-        });
-        let query_vector = benchmark::time_phase(&mut benchmark, "vector_embed_query_ms", || {
-            embedder.embed_query(&query)
-        })?;
-        let embeddings =
-            benchmark::time_phase(&mut benchmark, "vector_load_embeddings_ms", || {
-                db.load_embeddings(&model_key)
-            })?;
-        if let Some(benchmark) = benchmark.as_deref_mut() {
-            benchmark.set_field("vector_dimensions", query_vector.len());
-            benchmark.set_field("vector_embedding_count", embeddings.len());
-        }
-        Ok(benchmark::time_phase(
-            &mut benchmark,
-            "vector_score_embeddings_ms",
-            || {
-                score_embeddings(
-                    &query_vector,
-                    embeddings,
-                    config.embedding_min_cosine(),
-                    limit,
-                )
-            },
-        ))
-    })();
-    if let Some(benchmark) = benchmark {
-        benchmark.record_phase("vector_ms", started.elapsed());
-    }
-    result
+    VectorSearchCache::default().search_with_benchmark(db, config, query, limit, benchmark)
 }
 
 pub fn score_embeddings(

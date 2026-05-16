@@ -22,7 +22,7 @@ them.
 - Follow useful Obsidian wikilinks and backlinks when context is connected.
 - Get traceable results with file paths, headings, line ranges, scores, and
   snippets.
-- Let agents such as Codex read only the few chunks they need.
+- Let LLM agents read only the few chunks they need.
 - Keep indexing, embeddings, and metadata local.
 
 `obsidian-kb` does not call OpenAI, Claude, ChatGPT, or any hosted LLM API. It
@@ -150,7 +150,7 @@ Explore direct links around a note:
 obsidian-kb graph "Obsidian" --depth 1
 ```
 
-## Using With Codex Or Another Agent
+## Using With LLM Agents
 
 Give the agent a simple rule: search first, read second.
 
@@ -165,6 +165,9 @@ Recommended defaults:
 - Cite file paths and headings when summarizing.
 
 This keeps answers grounded while avoiding bulk reads of the whole vault.
+
+For a complete agent and MCP usage guide, see
+[USING_OBSIDIAN_KB_WITH_AGENTS.md](USING_OBSIDIAN_KB_WITH_AGENTS.md).
 
 ## Local Files
 
@@ -185,6 +188,11 @@ Optional benchmark logging can be enabled in `.obsidian-kb.toml` with
 `[benchmark] enabled = true`. Timings are appended locally as JSONL under
 `.obsidian-kb/benchmarks.jsonl` by default, and search query text is omitted
 unless `include_query = true`.
+
+For MCP clients, `obsidian-kb mcp` runs a local stdio server with search, show,
+stats, warmup, unload, and status tools. Hybrid and vector searches keep the
+local embedding model warm between requests, then unload it automatically after
+the configured idle timeout.
 
 ## What It Is Not
 

@@ -1,8 +1,8 @@
-# Agent Instructions for Obsidian Knowledge Base
+# Using obsidian-kb with LLM agents
 
-Use this document to guide an LLM agent such as Codex or Claude Code when it
-needs to initialize, index, maintain, or query an Obsidian vault with
-`obsidian-kb`.
+Use this document to guide an LLM agent, an MCP client, or an agentic coding
+tool when it needs to initialize, index, maintain, or query an Obsidian vault
+with `obsidian-kb`.
 
 `obsidian-kb` means **Obsidian Knowledge Base**. It is a local-first retrieval
 layer for Obsidian Markdown notes. The goal is not to load the whole vault into
@@ -13,7 +13,8 @@ chunks, and answer with citations.
 
 Non-negotiable rules:
 
-- For content questions about the vault, always run `obsidian-kb search` first.
+- For content questions about the vault, always run `obsidian-kb search`, or
+  the MCP `search` tool when using `obsidian-kb mcp`, first.
 - Never read the whole vault.
 - Do not use recursive `cat`, `rg`, `grep`, `find`, `fd`, or bulk file reads to
   answer vault content questions before search has identified specific sources.
@@ -21,6 +22,8 @@ Non-negotiable rules:
 - Prefer `search --include-text --max-chars 1200 --json` for compact first-pass
   context.
 - Use `show <chunk-id> --json` only when the search result text is insufficient.
+- Prefer MCP mode for long-lived agent sessions with repeated vector or hybrid
+  searches, so the local embedding model can stay warm between requests.
 - Cite note paths, headings, and line ranges in every content summary.
 - Do not modify Obsidian notes unless the user explicitly asks.
 - Do not add OpenAI, Claude, ChatGPT, or other hosted LLM API calls inside
@@ -187,6 +190,10 @@ normalize = true
 # Optional override. Defaults to the user cache directory.
 # cache_dir = "~/Library/Caches/obsidian-kb/models"
 
+[mcp]
+idle_unload_seconds = 600
+preload_embedder = false
+
 [doctor.unresolved_links]
 allow_forward_links = false
 ignore_targets = []
@@ -201,7 +208,10 @@ Tune only when there is evidence:
   `--expand-graph`;
 - recurring false-positive unresolved links: configure
   `[doctor.unresolved_links]`;
-- shared model cache needed: set `embeddings.cache_dir`.
+- shared model cache needed: set `embeddings.cache_dir`;
+- repeated MCP semantic searches start cold: call the MCP `warmup` tool or set
+  `mcp.preload_embedder = true`;
+- MCP memory should be released faster: reduce `mcp.idle_unload_seconds`.
 
 FastEmbed may download a local embedding model on first embedding build. The
 download is for local model files, not a hosted LLM call. If embeddings are
@@ -212,6 +222,55 @@ obsidian-kb index --no-embeddings
 ```
 
 Then use `--mode bm25` until embeddings can be built.
+
+## MCP Mode For Agents
+
+Use MCP mode when the agent platform can keep a long-lived stdio MCP server and
+will run several searches in one session:
+
+```bash
+obsidian-kb --config /path/to/.obsidian-kb.toml mcp
+```
+
+If the config is vault-local and the working directory is the vault, this is
+enough:
+
+```bash
+obsidian-kb mcp
+```
+
+MCP mode exposes these tools:
+
+- `search`: run BM25, vector, or hybrid search with the same options as the CLI;
+- `show`: read one selected chunk by ID;
+- `stats`: inspect indexed vault statistics;
+- `warmup`: load the local embedding model and embeddings into memory;
+- `unload`: drop the warm embedding cache when it is no longer needed;
+- `status`: inspect whether the warm cache is loaded.
+
+For exact one-off lookups, the CLI is usually enough:
+
+```bash
+obsidian-kb search "exact note or command" --mode bm25 --top 5 --json
+```
+
+For repeated semantic or hybrid retrieval, prefer MCP:
+
+1. Start `obsidian-kb mcp`.
+2. Call `warmup` at the beginning of a retrieval-heavy session, or set
+   `mcp.preload_embedder = true`.
+3. Call `search` for vector or hybrid queries.
+4. Call `show` only for selected chunks.
+5. Call `unload` when the session is done if memory should be released
+   immediately.
+
+`mcp.idle_unload_seconds` controls automatic cache unloading after inactivity.
+The MCP process stays alive; only the warm embedding model and embeddings are
+dropped. Set it to `0` only when automatic unloading should be disabled.
+
+MCP mode does not add hosted LLM calls. Embeddings and retrieval remain local.
+However, excerpts returned to an external agent may still be sent to that
+agent's model provider depending on the agent configuration.
 
 ## Indexing Policy
 
@@ -515,11 +574,13 @@ Retrieval agent:
 
 ```text
 You are a retrieval agent for an Obsidian vault indexed by obsidian-kb. Never
-read the whole vault. For content questions, start with obsidian-kb search. Use
-bm25 for exact names, vector for vague concepts, and hybrid --expand-graph for
-conceptual questions. Prefer search --include-text --max-chars 1200 --json for
-compact context. Use obsidian-kb show only for selected chunks. Return chunk IDs,
-paths, headings, line ranges, facts, and uncertainties.
+read the whole vault. For content questions, start with obsidian-kb search, or
+the MCP search tool when obsidian-kb mcp is available. Use bm25 for exact names,
+vector for vague concepts, and hybrid --expand-graph for conceptual questions.
+Prefer MCP mode for repeated vector or hybrid searches so the local embedding
+model stays warm. Prefer search --include-text --max-chars 1200 --json for
+compact context. Use obsidian-kb show only for selected chunks. Return chunk
+IDs, paths, headings, line ranges, facts, and uncertainties.
 ```
 
 Answer agent:
@@ -535,8 +596,11 @@ Librarian agent:
 ```text
 Maintain an Obsidian vault index with obsidian-kb. Prefer a vault-local
 .obsidian-kb.toml created by running init from inside the vault. Run index,
-doctor, stats, and smoke-test searches. Report config, freshness, embedding,
-link, and note-structure issues. Do not modify notes without approval.
+doctor, stats, and smoke-test searches. When MCP mode is used, configure
+mcp.idle_unload_seconds, use warmup/status/unload for cache diagnostics, and
+report whether the embedding cache stays warm. Report config, freshness,
+embedding, link, and note-structure issues. Do not modify notes without
+approval.
 ```
 
 Ingestion agent:

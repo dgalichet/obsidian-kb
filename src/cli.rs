@@ -21,6 +21,7 @@ pub enum Command {
     Graph(GraphArgs),
     Stats(StatsArgs),
     Doctor(DoctorArgs),
+    Mcp(McpArgs),
     #[command(about = "Print version information")]
     Version,
 }
@@ -141,6 +142,25 @@ pub struct DoctorArgs {
 
     #[arg(long, help = "Emit machine-readable JSON")]
     pub json: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct McpArgs {
+    #[arg(long, help = "Path to the Obsidian vault")]
+    pub vault: Option<PathBuf>,
+
+    #[arg(
+        long,
+        value_name = "SECONDS",
+        help = "Override the MCP vector model idle unload timeout; 0 disables auto-unload"
+    )]
+    pub idle_unload_seconds: Option<u64>,
+
+    #[arg(
+        long,
+        help = "Initialize the local embedding model when the MCP server starts"
+    )]
+    pub preload_embedder: bool,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]

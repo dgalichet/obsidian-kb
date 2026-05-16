@@ -16,6 +16,8 @@ pub struct AppConfig {
     #[serde(default)]
     pub benchmark: BenchmarkConfig,
     #[serde(default)]
+    pub mcp: McpConfig,
+    #[serde(default)]
     pub doctor: DoctorConfig,
     #[serde(skip)]
     pub config_dir: PathBuf,
@@ -76,6 +78,21 @@ impl Default for BenchmarkConfig {
             enabled: false,
             log_path: PathBuf::from(".obsidian-kb/benchmarks.jsonl"),
             include_query: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpConfig {
+    pub idle_unload_seconds: u64,
+    pub preload_embedder: bool,
+}
+
+impl Default for McpConfig {
+    fn default() -> Self {
+        Self {
+            idle_unload_seconds: 600,
+            preload_embedder: false,
         }
     }
 }
@@ -156,6 +173,7 @@ impl AppConfig {
                 cache_dir: None,
             },
             benchmark: BenchmarkConfig::default(),
+            mcp: McpConfig::default(),
             doctor: DoctorConfig::default(),
             config_dir: config_dir.to_path_buf(),
         })
