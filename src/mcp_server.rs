@@ -322,8 +322,8 @@ fn read_message(reader: &mut impl BufRead) -> Result<Option<String>> {
 }
 
 fn write_message(writer: &mut impl Write, message: &str) -> Result<()> {
-    write!(writer, "Content-Length: {}\r\n\r\n", message.len())?;
     writer.write_all(message.as_bytes())?;
+    writer.write_all(b"\n")?;
     writer.flush()?;
     Ok(())
 }
@@ -463,14 +463,11 @@ mod tests {
     }
 
     #[test]
-    fn writes_content_length_framed_message() {
+    fn writes_json_line_message() {
         let mut output = Vec::new();
 
         write_message(&mut output, r#"{"ok":true}"#).unwrap();
 
-        assert_eq!(
-            String::from_utf8(output).unwrap(),
-            "Content-Length: 11\r\n\r\n{\"ok\":true}"
-        );
+        assert_eq!(String::from_utf8(output).unwrap(), "{\"ok\":true}\n");
     }
 }
