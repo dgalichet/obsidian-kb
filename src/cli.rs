@@ -76,7 +76,7 @@ pub struct SearchArgs {
     #[arg(
         long = "expand-graph",
         alias = "graph",
-        help = "Expand results to directly linked notes/backlinks"
+        help = "Expand results through linked notes/backlinks using configured graph depth"
     )]
     pub expand_graph: bool,
 

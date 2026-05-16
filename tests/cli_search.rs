@@ -1,6 +1,7 @@
 mod common;
 
 use assert_cmd::Command;
+use obsidian_kb::{config, models::SearchHit};
 use predicates::prelude::*;
 
 #[test]
@@ -62,6 +63,74 @@ fn graph_search_adds_direct_neighbors() {
         .assert()
         .success()
         .stdout(predicate::str::contains("aws/app-mesh.md"));
+}
+
+#[test]
+fn graph_search_honors_configured_depth() {
+    let (_temp, vault) = common::temp_vault();
+    Command::cargo_bin("obsidian-kb")
+        .unwrap()
+        .args([
+            "index",
+            "--vault",
+            vault.to_str().unwrap(),
+            "--no-embeddings",
+        ])
+        .assert()
+        .success();
+
+    let output = Command::cargo_bin("obsidian-kb")
+        .unwrap()
+        .args([
+            "search",
+            "--vault",
+            vault.to_str().unwrap(),
+            "--mode",
+            "bm25",
+            "--expand-graph",
+            "--top",
+            "20",
+            "--json",
+            "mesh namespace routing",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let hits: Vec<SearchHit> = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(hits.iter().any(|hit| hit.path == "aws/app-mesh.md"));
+    assert!(
+        !hits
+            .iter()
+            .any(|hit| hit.path == "ai/lost-in-the-middle.md")
+    );
+
+    let config_path = vault.join(".obsidian-kb.toml");
+    let mut app_config = config::load_existing(None, Some(&config_path)).unwrap();
+    app_config.search.graph_depth = 2;
+    config::save_config(&app_config).unwrap();
+
+    let output = Command::cargo_bin("obsidian-kb")
+        .unwrap()
+        .args([
+            "search",
+            "--vault",
+            vault.to_str().unwrap(),
+            "--mode",
+            "bm25",
+            "--expand-graph",
+            "--top",
+            "20",
+            "--json",
+            "mesh namespace routing",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let hits: Vec<SearchHit> = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(
+        hits.iter()
+            .any(|hit| hit.path == "ai/lost-in-the-middle.md" && hit.graph)
+    );
 }
 
 #[test]
