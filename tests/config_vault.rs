@@ -10,6 +10,12 @@ fn config_defaults_and_loading_are_vault_relative() {
         AppConfig::default_for_vault(Path::new("tests/fixtures/sample_vault"), None).unwrap();
     assert_eq!(config.search.default_mode, "hybrid");
     assert_eq!(config.embeddings.model, "MultilingualE5Small");
+    assert!(!config.benchmark.enabled);
+    assert!(
+        config
+            .benchmark_log_path()
+            .ends_with(".obsidian-kb/benchmarks.jsonl")
+    );
     assert!(!config.doctor.unresolved_links.allow_forward_links);
     assert!(config.embedding_cache_dir().ends_with("obsidian-kb/models"));
     assert!(
@@ -84,4 +90,27 @@ fn existing_configs_without_embedding_cache_dir_still_load() {
 
     assert!(loaded.embeddings.cache_dir.is_none());
     assert!(loaded.embedding_cache_dir().ends_with("obsidian-kb/models"));
+}
+
+#[test]
+fn existing_configs_without_benchmark_section_still_load() {
+    let temp = tempfile::tempdir().unwrap();
+    let vault_path = temp.path().join("vault");
+    std::fs::create_dir_all(&vault_path).unwrap();
+
+    let original = AppConfig::default_for_vault_in(&vault_path, None, temp.path()).unwrap();
+    let mut toml: toml::Value = toml::to_string_pretty(&original).unwrap().parse().unwrap();
+    toml.as_table_mut().unwrap().remove("benchmark");
+
+    let path = temp.path().join(".obsidian-kb.toml");
+    std::fs::write(&path, toml::to_string_pretty(&toml).unwrap()).unwrap();
+
+    let loaded = config::load_existing(None, Some(&path)).unwrap();
+
+    assert!(!loaded.benchmark.enabled);
+    assert!(
+        loaded
+            .benchmark_log_path()
+            .ends_with(".obsidian-kb/benchmarks.jsonl")
+    );
 }

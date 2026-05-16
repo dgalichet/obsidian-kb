@@ -14,6 +14,8 @@ pub struct AppConfig {
     pub search: SearchConfig,
     pub embeddings: EmbeddingConfig,
     #[serde(default)]
+    pub benchmark: BenchmarkConfig,
+    #[serde(default)]
     pub doctor: DoctorConfig,
     #[serde(skip)]
     pub config_dir: PathBuf,
@@ -59,6 +61,23 @@ pub struct EmbeddingConfig {
     pub normalize: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cache_dir: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BenchmarkConfig {
+    pub enabled: bool,
+    pub log_path: PathBuf,
+    pub include_query: bool,
+}
+
+impl Default for BenchmarkConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            log_path: PathBuf::from(".obsidian-kb/benchmarks.jsonl"),
+            include_query: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -136,6 +155,7 @@ impl AppConfig {
                 normalize: true,
                 cache_dir: None,
             },
+            benchmark: BenchmarkConfig::default(),
             doctor: DoctorConfig::default(),
             config_dir: config_dir.to_path_buf(),
         })
@@ -186,6 +206,11 @@ impl AppConfig {
 
     pub fn embedding_min_cosine(&self) -> f32 {
         0.05
+    }
+
+    /// Returns the benchmark JSONL log path resolved relative to the config file.
+    pub fn benchmark_log_path(&self) -> PathBuf {
+        self.resolve_user_config_path(&self.benchmark.log_path)
     }
 
     fn resolve_vault_relative(&self, path: &Path) -> PathBuf {

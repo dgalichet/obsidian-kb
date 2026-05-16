@@ -1,6 +1,7 @@
 mod common;
 
 use assert_cmd::Command;
+use obsidian_kb::config;
 use predicates::prelude::*;
 use rusqlite::Connection;
 
@@ -71,6 +72,37 @@ fn repeated_index_is_idempotent_and_deleted_files_are_removed() {
         .assert()
         .success()
         .stdout(predicate::str::contains("edge/broken-links.md").not());
+}
+
+#[test]
+fn index_writes_benchmark_jsonl_when_enabled() {
+    let (_temp, vault) = common::temp_vault();
+    let mut app_config = config::AppConfig::default_for_vault_in(&vault, None, &vault).unwrap();
+    app_config.benchmark.enabled = true;
+    config::save_config(&app_config).unwrap();
+
+    Command::cargo_bin("obsidian-kb")
+        .unwrap()
+        .args([
+            "index",
+            "--vault",
+            vault.to_str().unwrap(),
+            "--no-embeddings",
+        ])
+        .assert()
+        .success();
+
+    let log = std::fs::read_to_string(vault.join(".obsidian-kb/benchmarks.jsonl")).unwrap();
+    let record: serde_json::Value = serde_json::from_str(log.lines().last().unwrap()).unwrap();
+
+    assert_eq!(record["command"], "index");
+    assert_eq!(record["status"], "ok");
+    assert_eq!(record["no_embeddings"], true);
+    assert!(record["total_ms"].as_f64().unwrap() >= 0.0);
+    assert!(record["phases"]["load_vault_ms"].as_f64().unwrap() >= 0.0);
+    assert!(record["phases"]["sqlite_replace_ms"].as_f64().unwrap() >= 0.0);
+    assert!(record["phases"]["tantivy_rebuild_ms"].as_f64().unwrap() >= 0.0);
+    assert!(record["phases"]["output_ms"].as_f64().unwrap() >= 0.0);
 }
 
 fn count_table(db_path: &std::path::Path, table: &str) -> usize {

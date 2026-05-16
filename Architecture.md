@@ -174,11 +174,22 @@ normalize = true
 # Optional override. Defaults to the user cache directory.
 # cache_dir = "~/Library/Caches/obsidian-kb/models"
 
+[benchmark]
+enabled = false
+log_path = ".obsidian-kb/benchmarks.jsonl"
+include_query = false
+
 [doctor.unresolved_links]
 allow_forward_links = false
 ignore_targets = []
 ignore_globs = []
 ```
+
+When `[benchmark]` is enabled, `obsidian-kb` appends one JSONL record per
+command to `log_path`. Records include total elapsed time, command metadata, and
+phase timings such as BM25 search, vector search, graph expansion, SQLite writes,
+Tantivy rebuilds, and embedding rebuilds. Search queries are not written unless
+`include_query = true`.
 
 Config resolution order:
 
