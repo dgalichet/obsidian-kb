@@ -66,6 +66,11 @@ pub fn run() -> Result<()> {
             if args.rebuild {
                 reset_local_indexes(&paths)?;
             }
+            if args.changed_only {
+                eprintln!(
+                    "warning: --changed-only is deprecated; use `obsidian-kb index`. Regular indexing refreshes SQLite/Tantivy and reuses unchanged embeddings."
+                );
+            }
             let mut db = db::Db::open(&paths.db_path)?;
             let previous_files = db.file_snapshots()?;
             let mut stats = db.replace_index(&parsed, &graph_report.warnings)?;
@@ -76,13 +81,6 @@ pub fn run() -> Result<()> {
                 0
             } else {
                 vector_search::rebuild_embeddings(&db, &config)?
-            };
-            let _index_mode = if args.changed_only {
-                "changed-only"
-            } else if args.rebuild {
-                "rebuild"
-            } else {
-                "default"
             };
             output::print_index_summary(&stats, graph_report.warnings.len(), embeddings);
         }

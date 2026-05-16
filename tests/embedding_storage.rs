@@ -5,7 +5,7 @@ use obsidian_kb::embeddings::encode_vector;
 use obsidian_kb::{db::Db, vector_search};
 
 #[test]
-fn unchanged_chunk_embeddings_are_preserved_across_changed_only_indexing() {
+fn unchanged_chunk_embeddings_are_preserved_across_refresh_indexing() {
     let (_temp, vault) = common::temp_vault();
     Command::cargo_bin("obsidian-kb")
         .unwrap()

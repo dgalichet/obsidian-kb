@@ -48,7 +48,11 @@ pub struct IndexArgs {
     #[arg(long, help = "Rebuild all local indexes")]
     pub rebuild: bool,
 
-    #[arg(long, conflicts_with = "rebuild", help = "Index only changed files")]
+    #[arg(
+        long,
+        conflicts_with = "rebuild",
+        help = "Deprecated: regular indexing refreshes SQLite/Tantivy and reuses unchanged embeddings"
+    )]
     pub changed_only: bool,
 
     #[arg(long, help = "Skip local vector embedding rebuild")]

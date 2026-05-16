@@ -64,9 +64,11 @@ SQLite stores vault metadata, chunks, links, and embeddings. Tantivy stores the
 BM25 full-text index.
 
 Indexing is idempotent. Normal indexing compares content hash, mtime, and file
-size. Unchanged chunk embeddings are reused when the chunk content hash still
-matches. Deleted Markdown files disappear from SQLite and Tantivy on the next
-index run.
+size. It reloads the vault, refreshes SQLite and Tantivy surfaces, and reuses
+unchanged chunk embeddings when the chunk content hash still matches. Deleted
+Markdown files disappear from SQLite and Tantivy on the next index run. The
+legacy `--changed-only` flag is still accepted, but it is a deprecated alias for
+normal indexing, not a true changed-only SQLite/Tantivy update.
 
 `obsidian-kb index --rebuild` deletes the local SQLite database and Tantivy
 directory, then rebuilds them from the vault. It does not modify Markdown notes.
@@ -192,7 +194,6 @@ obsidian-kb init --vault /path/to/ObsidianVault
 
 obsidian-kb index
 obsidian-kb index --rebuild
-obsidian-kb index --changed-only
 obsidian-kb index --no-embeddings
 
 obsidian-kb search "query"
@@ -236,7 +237,7 @@ files.
 ## Current Limitations
 
 - Vector search is brute force over SQLite-stored embeddings.
-- Incremental indexing preserves unchanged embeddings but still refreshes
+- Routine indexing preserves unchanged embeddings but still refreshes
   SQLite/Tantivy surfaces for consistency.
 - Graph expansion is depth-limited and intentionally shallow.
 - Markdown parsing targets common Obsidian patterns, not every Markdown

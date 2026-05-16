@@ -116,8 +116,13 @@ snippets, chunk IDs, ranks, scores, and graph boosts.
 Re-index after changing notes:
 
 ```bash
-obsidian-kb index --changed-only
+obsidian-kb index
 ```
+
+Routine indexing reloads the vault, refreshes SQLite metadata and Tantivy, and
+reuses embeddings for chunks whose content hash has not changed. The legacy
+`--changed-only` flag is still accepted, but it is not a true changed-only
+SQLite/Tantivy indexer.
 
 Rebuild everything if you want a clean index:
 
