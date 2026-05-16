@@ -86,6 +86,13 @@ Use hybrid search plus the Obsidian graph:
 obsidian-kb search "local RAG with Obsidian" --mode hybrid --expand-graph
 ```
 
+Filter by indexed tags and frontmatter properties:
+
+```bash
+obsidian-kb search "hybrid retrieval" --tag retrieval/hybrid --property status=active
+obsidian-kb search --tag business --json
+```
+
 ## Search Modes
 
 | Mode | Best for | Example |
@@ -110,6 +117,37 @@ obsidian-kb search "query" --mode hybrid --top 5 --include-text --max-chars 1200
 
 The JSON output includes file paths, titles, headings, line ranges, tags,
 snippets, chunk IDs, ranks, scores, and graph boosts.
+
+## Structured Filters
+
+`obsidian-kb` indexes tags and simple YAML frontmatter properties as structured
+metadata. Use `--tag` to require a tag and `--property KEY=VALUE` to require a
+frontmatter property value. Repeat either option to combine filters with AND
+semantics:
+
+```bash
+obsidian-kb search "agents" --tag ai/context --property status=active
+obsidian-kb search --property type=book --property status=reading --json
+```
+
+Filter-only searches are allowed when at least one `--tag` or `--property`
+filter is present. Tag filters include tags found in frontmatter and Markdown
+body text. Property filters use simple scalar values and scalar arrays from
+frontmatter.
+
+Frontmatter property indexing is configurable in `.obsidian-kb.toml`:
+
+```toml
+[index.properties]
+enabled = true
+filter_keys = ["*"]
+ignored_keys = ["cssclasses", "template", "id", "uuid", "publish", "dg-*"]
+max_value_chars = 200
+```
+
+By default all simple properties are available for exact filters except noisy
+or technical keys. Property filters do not change BM25 or vector scoring yet;
+they narrow the result set after candidate retrieval.
 
 ## Daily Workflow
 

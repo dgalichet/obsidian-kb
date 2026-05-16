@@ -5,9 +5,10 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::Path;
 
 use crate::models::{
-    ChunkRecord, GraphEdge, GraphView, IndexStats, NoteSummary, ParsedNote, StatsReport,
-    UnresolvedLinkRecord,
+    ChunkRecord, GraphEdge, GraphView, IndexStats, NoteSummary, ParsedNote, SearchFilters,
+    StatsReport, UnresolvedLinkRecord,
 };
+use crate::properties;
 use crate::schema;
 
 pub struct Db {
@@ -72,6 +73,7 @@ impl Db {
         tx.execute("PRAGMA foreign_keys = ON", [])?;
         tx.execute("DELETE FROM links", [])?;
         tx.execute("DELETE FROM tags", [])?;
+        tx.execute("DELETE FROM properties", [])?;
         tx.execute("DELETE FROM aliases", [])?;
         tx.execute("DELETE FROM chunks", [])?;
         tx.execute("DELETE FROM files", [])?;
@@ -139,6 +141,22 @@ impl Db {
                     params![file_id, tag],
                 )?;
                 stats.tags += 1;
+            }
+
+            for property in &note.properties {
+                tx.execute(
+                    "INSERT INTO properties(file_id, key, value_text, value_norm, value_type, value_json)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    params![
+                        file_id,
+                        property.key,
+                        property.value_text,
+                        property.value_norm,
+                        property.value_type,
+                        serde_json::to_string(&property.value_json)?
+                    ],
+                )?;
+                stats.properties += 1;
             }
 
             for link in &note.links {
@@ -221,6 +239,35 @@ impl Db {
             .map_err(Into::into)
     }
 
+    pub fn chunks_matching_file_ids(&self, file_ids: &BTreeSet<i64>) -> Result<Vec<ChunkRecord>> {
+        if file_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        Ok(self
+            .load_all_chunks()?
+            .into_iter()
+            .filter(|chunk| file_ids.contains(&chunk.file_id))
+            .collect())
+    }
+
+    pub fn matching_file_ids(&self, filters: &SearchFilters) -> Result<Option<BTreeSet<i64>>> {
+        if filters.is_empty() {
+            return Ok(None);
+        }
+
+        let mut matching = None;
+        for tag in &filters.tags {
+            intersect_file_ids(&mut matching, self.file_ids_for_tag(tag)?);
+        }
+        for property in &filters.properties {
+            intersect_file_ids(
+                &mut matching,
+                self.file_ids_for_property(&property.key, &property.value)?,
+            );
+        }
+        Ok(Some(matching.unwrap_or_default()))
+    }
+
     pub fn first_chunk_for_note(&self, path: &str) -> Result<Option<ChunkRecord>> {
         self.conn
             .query_row(
@@ -231,6 +278,29 @@ impl Db {
                 chunk_from_row,
             )
             .optional()
+            .map_err(Into::into)
+    }
+
+    fn file_ids_for_tag(&self, tag: &str) -> Result<BTreeSet<i64>> {
+        let tag = normalize_tag_filter(tag);
+        let mut stmt = self
+            .conn
+            .prepare("SELECT DISTINCT file_id FROM tags WHERE lower(tag) = ?1")?;
+        let rows = stmt.query_map(params![tag], |row| row.get::<_, i64>(0))?;
+        rows.collect::<rusqlite::Result<BTreeSet<_>>>()
+            .map_err(Into::into)
+    }
+
+    fn file_ids_for_property(&self, key: &str, value: &str) -> Result<BTreeSet<i64>> {
+        let key = properties::normalize_key(key);
+        let value = properties::normalize_value(value);
+        let mut stmt = self.conn.prepare(
+            "SELECT DISTINCT file_id
+             FROM properties
+             WHERE key = ?1 AND value_norm = ?2",
+        )?;
+        let rows = stmt.query_map(params![key, value], |row| row.get::<_, i64>(0))?;
+        rows.collect::<rusqlite::Result<BTreeSet<_>>>()
             .map_err(Into::into)
     }
 
@@ -372,6 +442,7 @@ impl Db {
             chunks: self.count_table("chunks")?,
             aliases: self.count_table("aliases")?,
             tags: self.count_table("tags")?,
+            properties: self.count_table("properties")?,
             links: self.count_table("links")?,
             unresolved_links: self.count_where("links", "target_file_id IS NULL")?,
             embeddings: self.count_table("embeddings")?,
@@ -656,6 +727,13 @@ fn normalize(value: &str) -> String {
     value.trim().to_lowercase()
 }
 
+fn normalize_tag_filter(value: &str) -> String {
+    normalize(value)
+        .trim_start_matches('#')
+        .trim_matches('/')
+        .to_string()
+}
+
 fn normalize_path(value: &str) -> String {
     normalize(value).replace('\\', "/")
 }
@@ -670,4 +748,12 @@ fn split_unit_separator(value: &str) -> Vec<String> {
         .filter(|part| !part.is_empty())
         .map(ToOwned::to_owned)
         .collect()
+}
+
+fn intersect_file_ids(current: &mut Option<BTreeSet<i64>>, next: BTreeSet<i64>) {
+    if let Some(current) = current {
+        *current = current.intersection(&next).copied().collect();
+    } else {
+        *current = Some(next);
+    }
 }

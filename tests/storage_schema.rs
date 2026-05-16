@@ -71,6 +71,18 @@ fn index_storage_matches_sqlite_and_tantivy_contract() {
         ],
     );
     assert_table_columns(&db, "tags", &["file_id", "tag"]);
+    assert_table_columns(
+        &db,
+        "properties",
+        &[
+            "file_id",
+            "key",
+            "value_text",
+            "value_norm",
+            "value_type",
+            "value_json",
+        ],
+    );
     assert_table_columns(&db, "aliases", &["file_id", "alias"]);
     assert_table_columns(&db, "meta", &["key", "value"]);
 

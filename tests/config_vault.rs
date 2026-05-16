@@ -10,6 +10,8 @@ fn config_defaults_and_loading_are_vault_relative() {
         AppConfig::default_for_vault(Path::new("tests/fixtures/sample_vault"), None).unwrap();
     assert_eq!(config.search.default_mode, "hybrid");
     assert_eq!(config.embeddings.model, "MultilingualE5Small");
+    assert!(config.index.properties.enabled);
+    assert_eq!(config.index.properties.filter_keys, vec!["*".to_string()]);
     assert!(!config.benchmark.enabled);
     assert!(
         config
@@ -134,4 +136,23 @@ fn existing_configs_without_mcp_section_still_load() {
 
     assert_eq!(loaded.mcp.idle_unload_seconds, 600);
     assert!(!loaded.mcp.preload_embedder);
+}
+
+#[test]
+fn existing_configs_without_index_properties_still_load() {
+    let temp = tempfile::tempdir().unwrap();
+    let vault_path = temp.path().join("vault");
+    std::fs::create_dir_all(&vault_path).unwrap();
+
+    let original = AppConfig::default_for_vault_in(&vault_path, None, temp.path()).unwrap();
+    let mut toml: toml::Value = toml::to_string_pretty(&original).unwrap().parse().unwrap();
+    toml["index"].as_table_mut().unwrap().remove("properties");
+
+    let path = temp.path().join(".obsidian-kb.toml");
+    std::fs::write(&path, toml::to_string_pretty(&toml).unwrap()).unwrap();
+
+    let loaded = config::load_existing(None, Some(&path)).unwrap();
+
+    assert!(loaded.index.properties.enabled);
+    assert_eq!(loaded.index.properties.filter_keys, vec!["*".to_string()]);
 }

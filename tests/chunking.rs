@@ -1,4 +1,8 @@
-use obsidian_kb::{chunking, config::IndexConfig, markdown};
+use obsidian_kb::{
+    chunking,
+    config::{IndexConfig, PropertyIndexConfig},
+    markdown,
+};
 use std::path::PathBuf;
 
 #[test]
@@ -19,6 +23,7 @@ fn chunks_attach_heading_metadata() {
             chunk_overlap_chars: 0,
             max_chunk_chars: 1200,
             remove_diacritics: true,
+            properties: PropertyIndexConfig::default(),
         },
     );
     assert_eq!(chunks.len(), 2);
@@ -54,6 +59,7 @@ fn splits_long_heading_sections_by_paragraphs() {
             chunk_overlap_chars: 100,
             max_chunk_chars: 1800,
             remove_diacritics: true,
+            properties: PropertyIndexConfig::default(),
         },
     );
 

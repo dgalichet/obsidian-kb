@@ -45,10 +45,38 @@ pub struct ParsedNote {
     pub body: String,
     pub aliases: Vec<String>,
     pub tags: Vec<String>,
+    pub properties: Vec<PropertyRecord>,
     pub links: Vec<WikiLink>,
     pub headings: Vec<Heading>,
     pub chunks: Vec<ChunkRecord>,
     pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PropertyRecord {
+    pub key: String,
+    pub value_text: String,
+    pub value_norm: String,
+    pub value_type: String,
+    pub value_json: Value,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SearchFilters {
+    pub tags: Vec<String>,
+    pub properties: Vec<PropertyFilter>,
+}
+
+impl SearchFilters {
+    pub fn is_empty(&self) -> bool {
+        self.tags.is_empty() && self.properties.is_empty()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PropertyFilter {
+    pub key: String,
+    pub value: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -103,6 +131,7 @@ pub struct IndexStats {
     pub chunks: usize,
     pub aliases: usize,
     pub tags: usize,
+    pub properties: usize,
     pub links: usize,
     pub unresolved_links: usize,
     pub warnings: usize,
@@ -180,6 +209,7 @@ pub struct StatsReport {
     pub chunks: usize,
     pub aliases: usize,
     pub tags: usize,
+    pub properties: usize,
     pub links: usize,
     pub unresolved_links: usize,
     pub embeddings: usize,

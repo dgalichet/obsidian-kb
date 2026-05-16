@@ -8,7 +8,7 @@ use crate::benchmark;
 use crate::cli::McpArgs;
 use crate::config::AppConfig;
 use crate::db::Db;
-use crate::models::SearchMode;
+use crate::models::{SearchFilters, SearchMode};
 use crate::paths::KbPaths;
 use crate::search::{self, SearchOptions};
 use crate::vector_search::VectorSearchCache;
@@ -215,7 +215,7 @@ impl McpServer {
     }
 
     fn tool_search(&mut self, arguments: &Value) -> Result<Value> {
-        let query = string_arg(arguments, "query")?;
+        let query = optional_string_arg(arguments, "query").unwrap_or("");
         let mode = optional_string_arg(arguments, "mode")
             .and_then(SearchMode::from_config_value)
             .unwrap_or_else(|| self.config.default_search_mode());
@@ -223,12 +223,20 @@ impl McpServer {
         let expand_graph = bool_arg(arguments, "expand_graph", false)?;
         let include_text = bool_arg(arguments, "include_text", false)?;
         let max_chars = usize_arg(arguments, "max_chars", 1200)?;
+        let filters = SearchFilters {
+            tags: string_array_arg(arguments, "tags")?,
+            properties: string_array_arg(arguments, "properties")?
+                .iter()
+                .map(|value| search::parse_property_filter(value))
+                .collect::<Result<Vec<_>>>()?,
+        };
         let options = SearchOptions {
             mode,
             limit: top,
             graph: expand_graph,
             include_text,
             max_chars,
+            filters: filters.clone(),
         };
         let config = self.config.clone();
         let vector_cache = &mut self.vector_cache;
@@ -241,6 +249,8 @@ impl McpServer {
                 benchmark.set_field("expand_graph", expand_graph);
                 benchmark.set_field("include_text", include_text);
                 benchmark.set_field("max_chars", max_chars);
+                benchmark.set_field("tag_filters", filters.tags.len());
+                benchmark.set_field("property_filters", filters.properties.len());
                 benchmark.set_field("query_chars", query.chars().count());
                 if config.benchmark.include_query {
                     benchmark.set_field("query", query);
@@ -341,9 +351,16 @@ fn tools() -> Value {
                     "top": { "type": "integer", "minimum": 0 },
                     "expand_graph": { "type": "boolean" },
                     "include_text": { "type": "boolean" },
-                    "max_chars": { "type": "integer", "minimum": 0 }
-                },
-                "required": ["query"]
+                    "max_chars": { "type": "integer", "minimum": 0 },
+                    "tags": {
+                        "type": "array",
+                        "items": { "type": "string" }
+                    },
+                    "properties": {
+                        "type": "array",
+                        "items": { "type": "string", "description": "KEY=VALUE" }
+                    }
+                }
             }
         },
         {
@@ -415,6 +432,24 @@ fn string_arg<'a>(arguments: &'a Value, name: &str) -> Result<&'a str> {
 
 fn optional_string_arg<'a>(arguments: &'a Value, name: &str) -> Option<&'a str> {
     arguments.get(name).and_then(Value::as_str)
+}
+
+fn string_array_arg(arguments: &Value, name: &str) -> Result<Vec<String>> {
+    let Some(value) = arguments.get(name) else {
+        return Ok(Vec::new());
+    };
+    let values = value
+        .as_array()
+        .with_context(|| format!("argument `{name}` must be an array of strings"))?;
+    values
+        .iter()
+        .map(|value| {
+            value
+                .as_str()
+                .map(ToOwned::to_owned)
+                .with_context(|| format!("argument `{name}` must contain only strings"))
+        })
+        .collect()
 }
 
 fn bool_arg(arguments: &Value, name: &str, default: bool) -> Result<bool> {

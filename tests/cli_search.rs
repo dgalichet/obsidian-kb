@@ -220,6 +220,84 @@ fn search_json_can_include_bounded_chunk_text() {
 }
 
 #[test]
+fn search_can_filter_by_tag_without_query() {
+    let (_temp, vault) = common::temp_vault();
+    Command::cargo_bin("obsidian-kb")
+        .unwrap()
+        .args([
+            "index",
+            "--vault",
+            vault.to_str().unwrap(),
+            "--no-embeddings",
+        ])
+        .assert()
+        .success();
+
+    let output = Command::cargo_bin("obsidian-kb")
+        .unwrap()
+        .args([
+            "search",
+            "--vault",
+            vault.to_str().unwrap(),
+            "--mode",
+            "bm25",
+            "--json",
+            "--tag",
+            "business",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let hits: Vec<SearchHit> = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(!hits.is_empty());
+    assert_eq!(hits[0].path, "business/opportunities.md");
+    assert_eq!(hits[0].source, "filter");
+    assert!(
+        hits.iter()
+            .all(|hit| hit.tags.contains(&"business".to_string()))
+    );
+}
+
+#[test]
+fn search_filters_bm25_results_by_tag_and_property() {
+    let (_temp, vault) = common::temp_vault();
+    Command::cargo_bin("obsidian-kb")
+        .unwrap()
+        .args([
+            "index",
+            "--vault",
+            vault.to_str().unwrap(),
+            "--no-embeddings",
+        ])
+        .assert()
+        .success();
+
+    let output = Command::cargo_bin("obsidian-kb")
+        .unwrap()
+        .args([
+            "search",
+            "--vault",
+            vault.to_str().unwrap(),
+            "--mode",
+            "bm25",
+            "--json",
+            "--tag",
+            "retrieval/hybrid",
+            "--property",
+            "status=active",
+            "hybrid retrieval",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let hits: Vec<SearchHit> = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(!hits.is_empty());
+    assert!(hits.iter().all(|hit| hit.path == "ai/rag.md"));
+}
+
+#[test]
 fn search_writes_benchmark_jsonl_without_query_by_default() {
     let (_temp, vault) = common::temp_vault();
     let mut app_config = config::AppConfig::default_for_vault_in(&vault, None, &vault).unwrap();
@@ -279,6 +357,8 @@ fn search_help_lists_compact_context_options() {
         .args(["search", "--help"])
         .assert()
         .success()
+        .stdout(predicate::str::contains("--tag"))
+        .stdout(predicate::str::contains("--property"))
         .stdout(predicate::str::contains("--include-text"))
         .stdout(predicate::str::contains("--max-chars"));
 }

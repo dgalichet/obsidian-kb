@@ -23,7 +23,7 @@ The project stays local-first:
 Obsidian Markdown vault
   -> Markdown, frontmatter, tag, alias, and wikilink parsing
   -> heading-aware chunking
-  -> SQLite metadata and embedding storage
+  -> SQLite metadata, structured property filters, and embedding storage
   -> Tantivy BM25 full-text index
   -> local FastEmbed vector embeddings
   -> BM25 search, vector search, or hybrid search
@@ -39,6 +39,7 @@ The parser targets common Obsidian Markdown patterns:
 - YAML frontmatter
 - aliases
 - tags
+- simple frontmatter properties for exact filters
 - wikilinks
 - backlinks
 - folders
@@ -61,7 +62,9 @@ live under `.obsidian-kb/`:
 ```
 
 SQLite stores vault metadata, chunks, links, and embeddings. Tantivy stores the
-BM25 full-text index.
+BM25 full-text index. SQLite also stores simple frontmatter property values in a
+dedicated `properties` table so search can apply exact filters without
+injecting every YAML field into BM25 or vector embeddings.
 
 Indexing is idempotent. Normal indexing compares content hash, mtime, and file
 size. It reloads the vault, refreshes SQLite and Tantivy surfaces, and reuses
@@ -85,6 +88,14 @@ questions, synonyms, and ideas where the exact wording may differ from the notes
 
 `hybrid` combines BM25 and vector ranks with Reciprocal Rank Fusion. It is the
 default because most real queries benefit from both lexical and semantic signals.
+
+Structured filters run against SQLite metadata. `--tag` requires tags extracted
+from frontmatter or Markdown body text, and `--property KEY=VALUE` requires a
+simple YAML frontmatter property value. Repeated filters use AND semantics.
+Filters are applied after lexical/vector candidate retrieval and before graph
+expansion, so filtered graph results must satisfy the same metadata constraints.
+When a search has filters but no query text, `obsidian-kb` returns matching
+chunks ordered by vault path and chunk index.
 
 Search JSON includes explainability fields: final rank, final score, BM25 rank
 and score, vector rank and score, graph boost, path, title, heading path, line

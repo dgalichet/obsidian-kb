@@ -17,6 +17,7 @@ pub mod models;
 pub mod normalization;
 pub mod output;
 pub mod paths;
+pub mod properties;
 pub mod schema;
 pub mod scoring;
 pub mod search;
@@ -29,7 +30,7 @@ use anyhow::{Context, Result, bail};
 use clap::Parser;
 use cli::{Cli, Command};
 use db::FileSnapshot;
-use models::SearchMode;
+use models::{SearchFilters, SearchMode};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub fn run() -> Result<()> {
@@ -134,6 +135,14 @@ pub fn run() -> Result<()> {
         Command::Search(args) => {
             let config = config::load_existing(args.vault.as_deref(), global_config.as_deref())?;
             let query = args.query.join(" ");
+            let filters = SearchFilters {
+                tags: args.tags.clone(),
+                properties: args
+                    .properties
+                    .iter()
+                    .map(|value| search::parse_property_filter(value))
+                    .collect::<Result<Vec<_>>>()?,
+            };
             let mode = args
                 .mode
                 .map(SearchMode::from)
@@ -147,6 +156,8 @@ pub fn run() -> Result<()> {
                     benchmark.set_field("expand_graph", args.expand_graph);
                     benchmark.set_field("include_text", args.include_text);
                     benchmark.set_field("max_chars", args.max_chars);
+                    benchmark.set_field("tag_filters", filters.tags.len());
+                    benchmark.set_field("property_filters", filters.properties.len());
                     benchmark.set_field("json", args.json);
                     benchmark.set_field("query_chars", query.chars().count());
                     if config.benchmark.include_query {
@@ -163,6 +174,7 @@ pub fn run() -> Result<()> {
                             graph: args.expand_graph,
                             include_text: args.include_text,
                             max_chars: args.max_chars,
+                            filters: filters.clone(),
                         },
                         benchmark.as_deref_mut(),
                     )?;
