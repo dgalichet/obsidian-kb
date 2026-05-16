@@ -1,6 +1,8 @@
 use anyhow::Result;
 use rayon::prelude::*;
+use std::time::Instant;
 
+use crate::benchmark::{self, BenchmarkRun};
 use crate::config::AppConfig;
 use crate::db::Db;
 use crate::embeddings::{FastEmbedder, cosine, decode_vector, encode_vector};
@@ -60,17 +62,55 @@ pub fn search(
     query: &str,
     limit: usize,
 ) -> Result<Vec<SearchCandidate>> {
-    let mut embedder = FastEmbedder::new(config)?;
-    let model_key = embedder.model_key();
-    let query = normalize_text(query, config.index.remove_diacritics);
-    let query_vector = embedder.embed_query(&query)?;
-    let embeddings = db.load_embeddings(&model_key)?;
-    Ok(score_embeddings(
-        &query_vector,
-        embeddings,
-        config.embedding_min_cosine(),
-        limit,
-    ))
+    search_with_benchmark(db, config, query, limit, None)
+}
+
+/// Runs vector search and optionally records detailed vector phase timings.
+pub fn search_with_benchmark(
+    db: &Db,
+    config: &AppConfig,
+    query: &str,
+    limit: usize,
+    mut benchmark: Option<&mut BenchmarkRun>,
+) -> Result<Vec<SearchCandidate>> {
+    let started = Instant::now();
+    let result = (|| {
+        let mut embedder =
+            benchmark::time_phase(&mut benchmark, "vector_embedder_init_ms", || {
+                FastEmbedder::new(config)
+            })?;
+        let model_key = embedder.model_key();
+        let query = benchmark::time_phase(&mut benchmark, "vector_normalize_query_ms", || {
+            normalize_text(query, config.index.remove_diacritics)
+        });
+        let query_vector = benchmark::time_phase(&mut benchmark, "vector_embed_query_ms", || {
+            embedder.embed_query(&query)
+        })?;
+        let embeddings =
+            benchmark::time_phase(&mut benchmark, "vector_load_embeddings_ms", || {
+                db.load_embeddings(&model_key)
+            })?;
+        if let Some(benchmark) = benchmark.as_deref_mut() {
+            benchmark.set_field("vector_dimensions", query_vector.len());
+            benchmark.set_field("vector_embedding_count", embeddings.len());
+        }
+        Ok(benchmark::time_phase(
+            &mut benchmark,
+            "vector_score_embeddings_ms",
+            || {
+                score_embeddings(
+                    &query_vector,
+                    embeddings,
+                    config.embedding_min_cosine(),
+                    limit,
+                )
+            },
+        ))
+    })();
+    if let Some(benchmark) = benchmark {
+        benchmark.record_phase("vector_ms", started.elapsed());
+    }
+    result
 }
 
 pub fn score_embeddings(
