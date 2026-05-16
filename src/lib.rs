@@ -1,6 +1,7 @@
 #![doc = include_str!("../README.md")]
 #![forbid(unsafe_code)]
 
+pub mod benchmark;
 pub mod chunking;
 pub mod cli;
 pub mod config;
@@ -61,29 +62,73 @@ pub fn run() -> Result<()> {
             }
             config::save_config(&config)?;
 
-            let mut parsed = vault::load_vault(&config)?;
-            let graph_report = graph::resolve_links(&mut parsed);
-            let paths = paths::KbPaths::from_config(&config);
-            if args.rebuild {
-                reset_local_indexes(&paths)?;
-            }
-            if args.changed_only {
-                eprintln!(
-                    "warning: --changed-only is deprecated; use `obsidian-kb index`. Regular indexing refreshes SQLite/Tantivy and reuses unchanged embeddings."
-                );
-            }
-            let mut db = db::Db::open(&paths.db_path)?;
-            let previous_files = db.file_snapshots()?;
-            let mut stats = db.replace_index(&parsed, &graph_report.warnings)?;
-            apply_change_stats(&mut stats, &previous_files, &parsed);
-            let chunks = db.load_all_chunks()?;
-            tantivy_index::rebuild(&paths.tantivy_dir, &chunks, config.index.remove_diacritics)?;
-            let embeddings = if args.no_embeddings || !config.embeddings.enabled {
-                0
-            } else {
-                vector_search::rebuild_embeddings(&db, &config)?
-            };
-            output::print_index_summary(&stats, graph_report.warnings.len(), embeddings);
+            benchmark::measure(
+                &config,
+                "index",
+                |benchmark| {
+                    benchmark.set_field("rebuild", args.rebuild);
+                    benchmark.set_field("changed_only", args.changed_only);
+                    benchmark.set_field("no_embeddings", args.no_embeddings);
+                },
+                |mut benchmark| {
+                    let mut parsed =
+                        benchmark::time_phase(&mut benchmark, "load_vault_ms", || {
+                            vault::load_vault(&config)
+                        })?;
+                    let graph_report =
+                        benchmark::time_phase(&mut benchmark, "resolve_graph_ms", || {
+                            graph::resolve_links(&mut parsed)
+                        });
+                    let paths = paths::KbPaths::from_config(&config);
+                    if args.rebuild {
+                        benchmark::time_phase(&mut benchmark, "reset_indexes_ms", || {
+                            reset_local_indexes(&paths)
+                        })?;
+                    }
+                    if args.changed_only {
+                        eprintln!(
+                            "warning: --changed-only is deprecated; use `obsidian-kb index`. Regular indexing refreshes SQLite/Tantivy and reuses unchanged embeddings."
+                        );
+                    }
+                    let mut db = benchmark::time_phase(&mut benchmark, "open_db_ms", || {
+                        db::Db::open(&paths.db_path)
+                    })?;
+                    let previous_files =
+                        benchmark::time_phase(&mut benchmark, "file_snapshots_ms", || {
+                            db.file_snapshots()
+                        })?;
+                    let mut stats =
+                        benchmark::time_phase(&mut benchmark, "sqlite_replace_ms", || {
+                            db.replace_index(&parsed, &graph_report.warnings)
+                        })?;
+                    apply_change_stats(&mut stats, &previous_files, &parsed);
+                    let chunks = benchmark::time_phase(&mut benchmark, "load_chunks_ms", || {
+                        db.load_all_chunks()
+                    })?;
+                    benchmark::time_phase(&mut benchmark, "tantivy_rebuild_ms", || {
+                        tantivy_index::rebuild(
+                            &paths.tantivy_dir,
+                            &chunks,
+                            config.index.remove_diacritics,
+                        )
+                    })?;
+                    let embeddings = if args.no_embeddings || !config.embeddings.enabled {
+                        0
+                    } else {
+                        benchmark::time_phase(&mut benchmark, "embeddings_rebuild_ms", || {
+                            vector_search::rebuild_embeddings(&db, &config)
+                        })?
+                    };
+                    benchmark::time_phase(&mut benchmark, "output_ms", || {
+                        output::print_index_summary(
+                            &stats,
+                            graph_report.warnings.len(),
+                            embeddings,
+                        );
+                    });
+                    Ok(())
+                },
+            )?;
         }
         Command::Search(args) => {
             let config = config::load_existing(args.vault.as_deref(), global_config.as_deref())?;
@@ -92,67 +137,162 @@ pub fn run() -> Result<()> {
                 .mode
                 .map(SearchMode::from)
                 .unwrap_or_else(|| config.default_search_mode());
-            let hits = search::search(
+            benchmark::measure(
                 &config,
-                &query,
-                mode,
-                args.top,
-                args.expand_graph,
-                args.include_text,
-                args.max_chars,
+                "search",
+                |benchmark| {
+                    benchmark.set_field("mode", search_mode_name(mode));
+                    benchmark.set_field("top", args.top);
+                    benchmark.set_field("expand_graph", args.expand_graph);
+                    benchmark.set_field("include_text", args.include_text);
+                    benchmark.set_field("max_chars", args.max_chars);
+                    benchmark.set_field("json", args.json);
+                    benchmark.set_field("query_chars", query.chars().count());
+                    if config.benchmark.include_query {
+                        benchmark.set_field("query", &query);
+                    }
+                },
+                |mut benchmark| {
+                    let hits = search::search_with_benchmark(
+                        &config,
+                        &query,
+                        search::SearchOptions {
+                            mode,
+                            limit: args.top,
+                            graph: args.expand_graph,
+                            include_text: args.include_text,
+                            max_chars: args.max_chars,
+                        },
+                        benchmark.as_deref_mut(),
+                    )?;
+                    benchmark::time_phase(&mut benchmark, "output_ms", || -> Result<()> {
+                        if args.json {
+                            output::print_json(&hits)?;
+                        } else {
+                            output::print_search_table(&hits);
+                        }
+                        Ok(())
+                    })?;
+                    Ok(())
+                },
             )?;
-            if args.json {
-                output::print_json(&hits)?;
-            } else {
-                output::print_search_table(&hits);
-            }
         }
         Command::Show(args) => {
             let config = config::load_existing(args.vault.as_deref(), global_config.as_deref())?;
-            let paths = paths::KbPaths::from_config(&config);
-            let db = db::Db::open(&paths.db_path)?;
-            let Some(chunk) = db.load_chunk(&args.chunk_id)? else {
-                bail!("chunk not found: {}", args.chunk_id);
-            };
-            if args.json {
-                output::print_json(&chunk)?;
-            } else {
-                output::print_chunk(&chunk);
-            }
+            benchmark::measure(
+                &config,
+                "show",
+                |benchmark| {
+                    benchmark.set_field("json", args.json);
+                },
+                |mut benchmark| {
+                    let paths = paths::KbPaths::from_config(&config);
+                    let db = benchmark::time_phase(&mut benchmark, "open_db_ms", || {
+                        db::Db::open(&paths.db_path)
+                    })?;
+                    let Some(chunk) =
+                        benchmark::time_phase(&mut benchmark, "load_chunk_ms", || {
+                            db.load_chunk(&args.chunk_id)
+                        })?
+                    else {
+                        bail!("chunk not found: {}", args.chunk_id);
+                    };
+                    benchmark::time_phase(&mut benchmark, "output_ms", || -> Result<()> {
+                        if args.json {
+                            output::print_json(&chunk)?;
+                        } else {
+                            output::print_chunk(&chunk);
+                        }
+                        Ok(())
+                    })?;
+                    Ok(())
+                },
+            )?;
         }
         Command::Graph(args) => {
             let config = config::load_existing(args.vault.as_deref(), global_config.as_deref())?;
-            let paths = paths::KbPaths::from_config(&config);
-            let db = db::Db::open(&paths.db_path)?;
-            let Some(view) = db.graph_view(&args.note, args.depth)? else {
-                bail!("note not found: {}", args.note);
-            };
-            if args.json {
-                output::print_json(&view)?;
-            } else {
-                output::print_graph_view(&view);
-            }
+            benchmark::measure(
+                &config,
+                "graph",
+                |benchmark| {
+                    benchmark.set_field("depth", args.depth);
+                    benchmark.set_field("json", args.json);
+                },
+                |mut benchmark| {
+                    let paths = paths::KbPaths::from_config(&config);
+                    let db = benchmark::time_phase(&mut benchmark, "open_db_ms", || {
+                        db::Db::open(&paths.db_path)
+                    })?;
+                    let Some(view) =
+                        benchmark::time_phase(&mut benchmark, "graph_view_ms", || {
+                            db.graph_view(&args.note, args.depth)
+                        })?
+                    else {
+                        bail!("note not found: {}", args.note);
+                    };
+                    benchmark::time_phase(&mut benchmark, "output_ms", || -> Result<()> {
+                        if args.json {
+                            output::print_json(&view)?;
+                        } else {
+                            output::print_graph_view(&view);
+                        }
+                        Ok(())
+                    })?;
+                    Ok(())
+                },
+            )?;
         }
         Command::Stats(args) => {
             let config = config::load_existing(args.vault.as_deref(), global_config.as_deref())?;
-            let paths = paths::KbPaths::from_config(&config);
-            let db = db::Db::open(&paths.db_path)?;
-            let report = db.stats()?;
-            if args.json {
-                output::print_json(&report)?;
-            } else {
-                output::print_stats(&report);
-            }
+            benchmark::measure(
+                &config,
+                "stats",
+                |benchmark| {
+                    benchmark.set_field("json", args.json);
+                },
+                |mut benchmark| {
+                    let paths = paths::KbPaths::from_config(&config);
+                    let db = benchmark::time_phase(&mut benchmark, "open_db_ms", || {
+                        db::Db::open(&paths.db_path)
+                    })?;
+                    let report = benchmark::time_phase(&mut benchmark, "stats_ms", || db.stats())?;
+                    benchmark::time_phase(&mut benchmark, "output_ms", || -> Result<()> {
+                        if args.json {
+                            output::print_json(&report)?;
+                        } else {
+                            output::print_stats(&report);
+                        }
+                        Ok(())
+                    })?;
+                    Ok(())
+                },
+            )?;
         }
         Command::Doctor(args) => {
             let config = config::load_existing(args.vault.as_deref(), global_config.as_deref())?;
-            let report = doctor::run(&config)?;
-            if args.json {
-                output::print_json(&report)?;
-            } else {
-                output::print_doctor_report(&report);
-            }
-            if report.fatal_count > 0 {
+            let fatal_count = benchmark::measure(
+                &config,
+                "doctor",
+                |benchmark| {
+                    benchmark.set_field("json", args.json);
+                },
+                |mut benchmark| {
+                    let report = benchmark::time_phase(&mut benchmark, "doctor_run_ms", || {
+                        doctor::run(&config)
+                    })?;
+                    let fatal_count = report.fatal_count;
+                    benchmark::time_phase(&mut benchmark, "output_ms", || -> Result<()> {
+                        if args.json {
+                            output::print_json(&report)?;
+                        } else {
+                            output::print_doctor_report(&report);
+                        }
+                        Ok(())
+                    })?;
+                    Ok(fatal_count)
+                },
+            )?;
+            if fatal_count > 0 {
                 std::process::exit(2);
             }
         }
@@ -162,6 +302,14 @@ pub fn run() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn search_mode_name(mode: SearchMode) -> &'static str {
+    match mode {
+        SearchMode::Bm25 => "bm25",
+        SearchMode::Vector => "vector",
+        SearchMode::Hybrid => "hybrid",
+    }
 }
 
 fn reset_local_indexes(paths: &paths::KbPaths) -> Result<()> {

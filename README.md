@@ -181,6 +181,11 @@ FastEmbed may download a local embedding model the first time embeddings are
 built. Model files are cached in the user cache directory by default, such as
 `~/Library/Caches/obsidian-kb/models` on macOS, and can be reused across vaults.
 
+Optional benchmark logging can be enabled in `.obsidian-kb.toml` with
+`[benchmark] enabled = true`. Timings are appended locally as JSONL under
+`.obsidian-kb/benchmarks.jsonl` by default, and search query text is omitted
+unless `include_query = true`.
+
 ## What It Is Not
 
 `obsidian-kb` is intentionally small in scope:
