@@ -12,6 +12,7 @@ use crate::models::{
 };
 use crate::normalization;
 use crate::paths::KbPaths;
+use crate::version;
 use crate::{tantivy_index, vault};
 
 struct DoctorCounts {
@@ -35,7 +36,7 @@ struct ClassifiedUnresolvedLink {
 
 pub fn run(config: &AppConfig) -> Result<DoctorReport> {
     let paths = KbPaths::from_config(config);
-    let version = env!("CARGO_PKG_VERSION").to_string();
+    let version = version::version().to_string();
     let mut checks = Vec::new();
     let mut issues = Vec::new();
 
