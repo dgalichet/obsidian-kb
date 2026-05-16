@@ -225,9 +225,13 @@ obsidian-kb doctor
 For routine refresh after notes changed:
 
 ```bash
-obsidian-kb index --changed-only
+obsidian-kb index
 obsidian-kb doctor
 ```
+
+Routine indexing refreshes SQLite/Tantivy and reuses embeddings whose chunk
+content hash is unchanged. The legacy `--changed-only` flag is accepted for
+compatibility, but it is not a true changed-only SQLite/Tantivy indexer.
 
 For diagnostics:
 
@@ -446,7 +450,7 @@ vault without approval.
 When the vault changes:
 
 ```bash
-obsidian-kb index --changed-only
+obsidian-kb index
 obsidian-kb doctor
 ```
 
