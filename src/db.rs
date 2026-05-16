@@ -5,8 +5,9 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::Path;
 
 use crate::models::{
-    ChunkRecord, GraphEdge, GraphView, IndexStats, NoteSummary, ParsedNote, SearchFilters,
-    StatsReport, UnresolvedLinkRecord,
+    ChunkRecord, GraphEdge, GraphView, IndexStats, NoteSummary, ParsedNote, PropertyFacetReport,
+    PropertyFilter, PropertyKeyFacet, PropertyOperator, PropertyValueFacet, SearchFilters,
+    StatsReport, TagFacet, UnresolvedLinkRecord,
 };
 use crate::properties;
 use crate::schema;
@@ -260,10 +261,7 @@ impl Db {
             intersect_file_ids(&mut matching, self.file_ids_for_tag(tag)?);
         }
         for property in &filters.properties {
-            intersect_file_ids(
-                &mut matching,
-                self.file_ids_for_property(&property.key, &property.value)?,
-            );
+            intersect_file_ids(&mut matching, self.file_ids_for_property(property)?);
         }
         Ok(Some(matching.unwrap_or_default()))
     }
@@ -291,14 +289,94 @@ impl Db {
             .map_err(Into::into)
     }
 
-    fn file_ids_for_property(&self, key: &str, value: &str) -> Result<BTreeSet<i64>> {
-        let key = properties::normalize_key(key);
-        let value = properties::normalize_value(value);
+    fn file_ids_for_property(&self, filter: &PropertyFilter) -> Result<BTreeSet<i64>> {
+        let key = properties::normalize_key(&filter.key);
+        let value = properties::normalize_value(&filter.value);
+        match filter.operator {
+            PropertyOperator::Eq => self.file_ids_for_property_eq(&key, &value),
+            PropertyOperator::NotEq => self.file_ids_for_property_not_eq(&key, &value),
+            PropertyOperator::Gt
+            | PropertyOperator::Gte
+            | PropertyOperator::Lt
+            | PropertyOperator::Lte => {
+                self.file_ids_for_property_ordered(filter.operator, &key, &value)
+            }
+        }
+    }
+
+    fn file_ids_for_property_eq(&self, key: &str, value: &str) -> Result<BTreeSet<i64>> {
         let mut stmt = self.conn.prepare(
             "SELECT DISTINCT file_id
              FROM properties
              WHERE key = ?1 AND value_norm = ?2",
         )?;
+        let rows = stmt.query_map(params![key, value], |row| row.get::<_, i64>(0))?;
+        rows.collect::<rusqlite::Result<BTreeSet<_>>>()
+            .map_err(Into::into)
+    }
+
+    fn file_ids_for_property_not_eq(&self, key: &str, value: &str) -> Result<BTreeSet<i64>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT DISTINCT p.file_id
+             FROM properties p
+             WHERE p.key = ?1
+               AND NOT EXISTS (
+                 SELECT 1 FROM properties blocked
+                 WHERE blocked.file_id = p.file_id
+                   AND blocked.key = ?1
+                   AND blocked.value_norm = ?2
+               )",
+        )?;
+        let rows = stmt.query_map(params![key, value], |row| row.get::<_, i64>(0))?;
+        rows.collect::<rusqlite::Result<BTreeSet<_>>>()
+            .map_err(Into::into)
+    }
+
+    fn file_ids_for_property_ordered(
+        &self,
+        operator: PropertyOperator,
+        key: &str,
+        value: &str,
+    ) -> Result<BTreeSet<i64>> {
+        if let Ok(number) = value.parse::<f64>() {
+            return self.file_ids_for_numeric_property(operator, key, number);
+        }
+        self.file_ids_for_text_property(operator, key, value)
+    }
+
+    fn file_ids_for_numeric_property(
+        &self,
+        operator: PropertyOperator,
+        key: &str,
+        value: f64,
+    ) -> Result<BTreeSet<i64>> {
+        let comparison = comparison_sql(operator);
+        let sql = format!(
+            "SELECT DISTINCT file_id
+             FROM properties
+             WHERE key = ?1
+               AND value_type IN ('number', 'array:number')
+               AND CAST(value_text AS REAL) {comparison} ?2"
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map(params![key, value], |row| row.get::<_, i64>(0))?;
+        rows.collect::<rusqlite::Result<BTreeSet<_>>>()
+            .map_err(Into::into)
+    }
+
+    fn file_ids_for_text_property(
+        &self,
+        operator: PropertyOperator,
+        key: &str,
+        value: &str,
+    ) -> Result<BTreeSet<i64>> {
+        let comparison = comparison_sql(operator);
+        let sql = format!(
+            "SELECT DISTINCT file_id
+             FROM properties
+             WHERE key = ?1 AND value_norm {comparison} ?2"
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map(params![key, value], |row| row.get::<_, i64>(0))?;
         rows.collect::<rusqlite::Result<BTreeSet<_>>>()
             .map_err(Into::into)
@@ -448,6 +526,94 @@ impl Db {
             embeddings: self.count_table("embeddings")?,
             warnings: self.warnings()?.len(),
         })
+    }
+
+    pub fn tag_facets(&self, prefix: Option<&str>, limit: usize) -> Result<Vec<TagFacet>> {
+        let limit = limit_or_max(limit);
+        let rows = if let Some(prefix) = prefix {
+            let pattern = format!("{}%", normalize_tag_filter(prefix));
+            let mut stmt = self.conn.prepare(
+                "SELECT tag, COUNT(DISTINCT file_id) AS notes
+                 FROM tags
+                 WHERE lower(tag) LIKE ?1
+                 GROUP BY tag
+                 ORDER BY notes DESC, tag
+                 LIMIT ?2",
+            )?;
+            stmt.query_map(params![pattern, limit], tag_facet_from_row)?
+                .collect::<rusqlite::Result<Vec<_>>>()?
+        } else {
+            let mut stmt = self.conn.prepare(
+                "SELECT tag, COUNT(DISTINCT file_id) AS notes
+                 FROM tags
+                 GROUP BY tag
+                 ORDER BY notes DESC, tag
+                 LIMIT ?1",
+            )?;
+            stmt.query_map(params![limit], tag_facet_from_row)?
+                .collect::<rusqlite::Result<Vec<_>>>()?
+        };
+        Ok(rows)
+    }
+
+    pub fn property_facets(&self, key: Option<&str>, limit: usize) -> Result<PropertyFacetReport> {
+        let limit = limit_or_max(limit);
+        if let Some(key) = key {
+            let key = properties::normalize_key(key);
+            return Ok(PropertyFacetReport {
+                values: self.property_value_facets(&key, limit)?,
+                key: Some(key),
+                keys: Vec::new(),
+            });
+        }
+
+        let mut stmt = self.conn.prepare(
+            "SELECT key,
+                    COUNT(DISTINCT file_id) AS notes,
+                    COUNT(DISTINCT value_norm) AS value_count
+             FROM properties
+             GROUP BY key
+             ORDER BY notes DESC, key
+             LIMIT ?1",
+        )?;
+        let keys = stmt
+            .query_map(params![limit], |row| {
+                Ok(PropertyKeyFacet {
+                    key: row.get(0)?,
+                    notes: row.get::<_, i64>(1)? as usize,
+                    values: row.get::<_, i64>(2)? as usize,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(PropertyFacetReport {
+            key: None,
+            keys,
+            values: Vec::new(),
+        })
+    }
+
+    fn property_value_facets(&self, key: &str, limit: i64) -> Result<Vec<PropertyValueFacet>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT key,
+                    MIN(value_text) AS value_text,
+                    MIN(value_type) AS value_type,
+                    COUNT(DISTINCT file_id) AS notes
+             FROM properties
+             WHERE key = ?1
+             GROUP BY key, value_norm
+             ORDER BY notes DESC, value_text
+             LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![key, limit], |row| {
+            Ok(PropertyValueFacet {
+                key: row.get(0)?,
+                value: row.get(1)?,
+                value_type: row.get(2)?,
+                notes: row.get::<_, i64>(3)? as usize,
+            })
+        })?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(Into::into)
     }
 
     pub fn counts(&self) -> Result<(usize, usize)> {
@@ -719,6 +885,13 @@ fn note_summary_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<NoteSummar
     })
 }
 
+fn tag_facet_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<TagFacet> {
+    Ok(TagFacet {
+        tag: row.get(0)?,
+        notes: row.get::<_, i64>(1)? as usize,
+    })
+}
+
 fn empty_as_none(value: &str) -> Option<&str> {
     if value.is_empty() { None } else { Some(value) }
 }
@@ -748,6 +921,22 @@ fn split_unit_separator(value: &str) -> Vec<String> {
         .filter(|part| !part.is_empty())
         .map(ToOwned::to_owned)
         .collect()
+}
+
+fn comparison_sql(operator: PropertyOperator) -> &'static str {
+    match operator {
+        PropertyOperator::Gt => ">",
+        PropertyOperator::Gte => ">=",
+        PropertyOperator::Lt => "<",
+        PropertyOperator::Lte => "<=",
+        PropertyOperator::Eq | PropertyOperator::NotEq => {
+            unreachable!("exact operators do not use ordered comparison")
+        }
+    }
+}
+
+fn limit_or_max(limit: usize) -> i64 {
+    if limit == 0 { i64::MAX } else { limit as i64 }
 }
 
 fn intersect_file_ids(current: &mut Option<BTreeSet<i64>>, next: BTreeSet<i64>) {

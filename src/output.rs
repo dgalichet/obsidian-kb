@@ -3,7 +3,10 @@ use comfy_table::{Cell, Table, presets::UTF8_FULL};
 use owo_colors::OwoColorize;
 use serde::Serialize;
 
-use crate::models::{ChunkRecord, DoctorReport, GraphView, IndexStats, SearchHit, StatsReport};
+use crate::models::{
+    ChunkRecord, DoctorReport, GraphView, IndexStats, PropertyFacetReport, SearchHit, StatsReport,
+    TagFacet,
+};
 
 pub fn print_index_summary(stats: &IndexStats, graph_warnings: usize, embeddings: usize) {
     println!(
@@ -163,6 +166,43 @@ pub fn print_stats(report: &StatsReport) {
     ]);
     table.add_row(vec!["embeddings", &report.embeddings.to_string()]);
     table.add_row(vec!["warnings", &report.warnings.to_string()]);
+    println!("{table}");
+}
+
+pub fn print_tags(tags: &[TagFacet]) {
+    let mut table = Table::new();
+    table
+        .load_preset(UTF8_FULL)
+        .set_header(vec!["tag", "notes"]);
+    for tag in tags {
+        table.add_row(vec![Cell::new(&tag.tag), Cell::new(tag.notes)]);
+    }
+    println!("{table}");
+}
+
+pub fn print_properties(report: &PropertyFacetReport) {
+    let mut table = Table::new();
+    table.load_preset(UTF8_FULL);
+    if report.key.is_some() {
+        table.set_header(vec!["key", "value", "type", "notes"]);
+        for value in &report.values {
+            table.add_row(vec![
+                Cell::new(&value.key),
+                Cell::new(&value.value),
+                Cell::new(&value.value_type),
+                Cell::new(value.notes),
+            ]);
+        }
+    } else {
+        table.set_header(vec!["key", "notes", "values"]);
+        for key in &report.keys {
+            table.add_row(vec![
+                Cell::new(&key.key),
+                Cell::new(key.notes),
+                Cell::new(key.values),
+            ]);
+        }
+    }
     println!("{table}");
 }
 

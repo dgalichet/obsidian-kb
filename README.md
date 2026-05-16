@@ -128,12 +128,23 @@ semantics:
 ```bash
 obsidian-kb search "agents" --tag ai/context --property status=active
 obsidian-kb search --property type=book --property status=reading --json
+obsidian-kb search --property 'created>=2026-01-01' --json
 ```
 
 Filter-only searches are allowed when at least one `--tag` or `--property`
 filter is present. Tag filters include tags found in frontmatter and Markdown
 body text. Property filters use simple scalar values and scalar arrays from
-frontmatter.
+frontmatter. Supported property operators are `=`, `!=`, `>`, `>=`, `<`, and
+`<=`. Quote filters containing `<` or `>` in shells.
+
+Discover available filters before guessing:
+
+```bash
+obsidian-kb tags
+obsidian-kb tags --prefix ai --json
+obsidian-kb properties
+obsidian-kb properties --key status --json
+```
 
 Frontmatter property indexing is configurable in `.obsidian-kb.toml`:
 

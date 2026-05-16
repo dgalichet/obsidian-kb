@@ -281,6 +281,70 @@ pub fn run() -> Result<()> {
                 },
             )?;
         }
+        Command::Tags(args) => {
+            let config = config::load_existing(args.vault.as_deref(), global_config.as_deref())?;
+            benchmark::measure(
+                &config,
+                "tags",
+                |benchmark| {
+                    benchmark.set_field("top", args.top);
+                    benchmark.set_field("json", args.json);
+                    if let Some(prefix) = args.prefix.as_deref() {
+                        benchmark.set_field("prefix", prefix);
+                    }
+                },
+                |mut benchmark| {
+                    let paths = paths::KbPaths::from_config(&config);
+                    let db = benchmark::time_phase(&mut benchmark, "open_db_ms", || {
+                        db::Db::open(&paths.db_path)
+                    })?;
+                    let tags = benchmark::time_phase(&mut benchmark, "tags_ms", || {
+                        db.tag_facets(args.prefix.as_deref(), args.top)
+                    })?;
+                    benchmark::time_phase(&mut benchmark, "output_ms", || -> Result<()> {
+                        if args.json {
+                            output::print_json(&tags)?;
+                        } else {
+                            output::print_tags(&tags);
+                        }
+                        Ok(())
+                    })?;
+                    Ok(())
+                },
+            )?;
+        }
+        Command::Properties(args) => {
+            let config = config::load_existing(args.vault.as_deref(), global_config.as_deref())?;
+            benchmark::measure(
+                &config,
+                "properties",
+                |benchmark| {
+                    benchmark.set_field("top", args.top);
+                    benchmark.set_field("json", args.json);
+                    if let Some(key) = args.key.as_deref() {
+                        benchmark.set_field("key", key);
+                    }
+                },
+                |mut benchmark| {
+                    let paths = paths::KbPaths::from_config(&config);
+                    let db = benchmark::time_phase(&mut benchmark, "open_db_ms", || {
+                        db::Db::open(&paths.db_path)
+                    })?;
+                    let report = benchmark::time_phase(&mut benchmark, "properties_ms", || {
+                        db.property_facets(args.key.as_deref(), args.top)
+                    })?;
+                    benchmark::time_phase(&mut benchmark, "output_ms", || -> Result<()> {
+                        if args.json {
+                            output::print_json(&report)?;
+                        } else {
+                            output::print_properties(&report);
+                        }
+                        Ok(())
+                    })?;
+                    Ok(())
+                },
+            )?;
+        }
         Command::Doctor(args) => {
             let config = config::load_existing(args.vault.as_deref(), global_config.as_deref())?;
             let fatal_count = benchmark::measure(

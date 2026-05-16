@@ -68,4 +68,39 @@ fn show_graph_and_stats_support_json() {
         .assert()
         .success()
         .stdout(predicate::str::contains("\"notes\""));
+
+    Command::cargo_bin("obsidian-kb")
+        .unwrap()
+        .args([
+            "tags",
+            "--vault",
+            vault.to_str().unwrap(),
+            "--prefix",
+            "business",
+            "--json",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"tag\": \"business\""));
+
+    Command::cargo_bin("obsidian-kb")
+        .unwrap()
+        .args(["properties", "--vault", vault.to_str().unwrap(), "--json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"key\": \"status\""));
+
+    Command::cargo_bin("obsidian-kb")
+        .unwrap()
+        .args([
+            "properties",
+            "--vault",
+            vault.to_str().unwrap(),
+            "--key",
+            "status",
+            "--json",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"value\": \"active\""));
 }

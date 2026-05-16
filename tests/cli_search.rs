@@ -298,6 +298,56 @@ fn search_filters_bm25_results_by_tag_and_property() {
 }
 
 #[test]
+fn search_property_filters_support_comparison_and_not_equal() {
+    let (_temp, vault) = common::temp_vault();
+    std::fs::write(
+        vault.join("metadata-active.md"),
+        "---\ntitle: Active Metadata\nstatus: active\npriority: 3\ncreated: 2026-01-02\n---\n# Active Metadata\nMetadata command test note.\n",
+    )
+    .unwrap();
+    std::fs::write(
+        vault.join("metadata-archived.md"),
+        "---\ntitle: Archived Metadata\nstatus: archived\npriority: 1\ncreated: 2024-01-02\n---\n# Archived Metadata\nMetadata command test note.\n",
+    )
+    .unwrap();
+    Command::cargo_bin("obsidian-kb")
+        .unwrap()
+        .args([
+            "index",
+            "--vault",
+            vault.to_str().unwrap(),
+            "--no-embeddings",
+        ])
+        .assert()
+        .success();
+
+    let output = Command::cargo_bin("obsidian-kb")
+        .unwrap()
+        .args([
+            "search",
+            "--vault",
+            vault.to_str().unwrap(),
+            "--mode",
+            "bm25",
+            "--json",
+            "--property",
+            "priority>=2",
+            "--property",
+            "status!=archived",
+            "--property",
+            "created>=2026-01-01",
+            "metadata command test",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let hits: Vec<SearchHit> = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(!hits.is_empty());
+    assert!(hits.iter().all(|hit| hit.path == "metadata-active.md"));
+}
+
+#[test]
 fn search_writes_benchmark_jsonl_without_query_by_default() {
     let (_temp, vault) = common::temp_vault();
     let mut app_config = config::AppConfig::default_for_vault_in(&vault, None, &vault).unwrap();

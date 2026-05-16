@@ -358,7 +358,7 @@ fn tools() -> Value {
                     },
                     "properties": {
                         "type": "array",
-                        "items": { "type": "string", "description": "KEY=VALUE" }
+                        "items": { "type": "string", "description": "KEY=VALUE, KEY!=VALUE, KEY>=VALUE, KEY<=VALUE, KEY>VALUE, or KEY<VALUE" }
                     }
                 }
             }

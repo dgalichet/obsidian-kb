@@ -20,6 +20,8 @@ pub enum Command {
     Show(ShowArgs),
     Graph(GraphArgs),
     Stats(StatsArgs),
+    Tags(TagsArgs),
+    Properties(PropertiesArgs),
     Doctor(DoctorArgs),
     Mcp(McpArgs),
     #[command(about = "Print version information")]
@@ -83,8 +85,8 @@ pub struct SearchArgs {
 
     #[arg(
         long = "property",
-        value_name = "KEY=VALUE",
-        help = "Require an indexed frontmatter property; repeat for AND filters"
+        value_name = "FILTER",
+        help = "Require an indexed frontmatter property filter such as KEY=VALUE, KEY!=VALUE, or KEY>=VALUE; repeat for AND filters"
     )]
     pub properties: Vec<String>,
 
@@ -144,6 +146,36 @@ pub struct GraphArgs {
 pub struct StatsArgs {
     #[arg(long, help = "Path to the Obsidian vault")]
     pub vault: Option<PathBuf>,
+
+    #[arg(long, help = "Emit machine-readable JSON")]
+    pub json: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct TagsArgs {
+    #[arg(long, help = "Path to the Obsidian vault")]
+    pub vault: Option<PathBuf>,
+
+    #[arg(long, alias = "limit", default_value_t = 50)]
+    pub top: usize,
+
+    #[arg(long, value_name = "PREFIX", help = "Only list tags with this prefix")]
+    pub prefix: Option<String>,
+
+    #[arg(long, help = "Emit machine-readable JSON")]
+    pub json: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct PropertiesArgs {
+    #[arg(long, help = "Path to the Obsidian vault")]
+    pub vault: Option<PathBuf>,
+
+    #[arg(long, alias = "limit", default_value_t = 50)]
+    pub top: usize,
+
+    #[arg(long, value_name = "KEY", help = "List values for one property key")]
+    pub key: Option<String>,
 
     #[arg(long, help = "Emit machine-readable JSON")]
     pub json: bool,

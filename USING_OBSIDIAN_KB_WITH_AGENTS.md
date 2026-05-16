@@ -40,9 +40,9 @@ The useful behavior comes from selection, not volume.
 
 ```text
 Obsidian Markdown vault
-  -> frontmatter, aliases, tags, headings, wikilinks, and backlinks
+  -> frontmatter, properties, aliases, tags, headings, wikilinks, and backlinks
   -> heading-aware chunks
-  -> SQLite metadata and local embeddings
+  -> SQLite metadata, structured filters, and local embeddings
   -> Tantivy BM25 index
   -> local FastEmbed vector embeddings
   -> BM25, vector, or hybrid search
@@ -361,6 +361,37 @@ obsidian-kb search "Obsidian as a local RAG knowledge base" --mode hybrid --expa
 Graph expansion is a recall aid, not proof. Read a graph-expanded neighbor only
 when its path, title, heading, tags, or snippet is clearly relevant.
 
+## Structured Filters
+
+Use structured filters when the user mentions a known tag or frontmatter
+property such as status, project, type, source, author, date, or priority.
+Filters narrow results; they do not replace semantic or exact search.
+
+Discover available filter values before guessing:
+
+```bash
+obsidian-kb tags --json
+obsidian-kb tags --prefix ai --json
+obsidian-kb properties --json
+obsidian-kb properties --key status --json
+```
+
+Apply filters with search:
+
+```bash
+obsidian-kb search "retrieval" --tag ai/context --property status=active --json
+obsidian-kb search --property type=book --property status=reading --json
+obsidian-kb search --property 'created>=2026-01-01' --json
+```
+
+Rules:
+
+- Repeat `--tag` and `--property` to combine filters with AND semantics.
+- Use `--property KEY=VALUE` for exact matches.
+- Use quoted comparison filters for dates or numbers: `KEY>=VALUE`, `KEY<=VALUE`, `KEY>VALUE`, `KEY<VALUE`.
+- Use `KEY!=VALUE` only when you want notes where that property key exists and does not have that value.
+- Prefer filters for metadata constraints; do not put metadata terms into the free-text query unless they are also part of the conceptual question.
+
 ## Compact Context For Agents
 
 Preferred first pass:
@@ -414,13 +445,14 @@ the chunk text before answering.
 For a content question:
 
 1. Classify the question: exact, vague, or conceptual.
-2. Run one targeted `obsidian-kb search`.
-3. Inspect paths, headings, snippets, line ranges, and scores.
-4. Use included text if enough; otherwise read selected chunks with `show`.
-5. If results are weak, reformulate once or switch search mode.
-6. Answer from the retrieved excerpts.
-7. Cite path, heading, and line range.
-8. State gaps when retrieved sources do not fully answer the question.
+2. If the user names metadata constraints, discover tags/properties first.
+3. Run one targeted `obsidian-kb search`, adding structured filters when useful.
+4. Inspect paths, headings, snippets, line ranges, and scores.
+5. Use included text if enough; otherwise read selected chunks with `show`.
+6. If results are weak, reformulate once or switch search mode.
+7. Answer from the retrieved excerpts.
+8. Cite path, heading, and line range.
+9. State gaps when retrieved sources do not fully answer the question.
 
 Do not fabricate citations. Prefer a partial sourced answer over a broad
 unsourced answer.
@@ -488,6 +520,7 @@ Good signals:
 - each note has a clear title;
 - headings divide ideas into searchable sections;
 - tags are stable and not overly granular;
+- frontmatter properties use stable keys and predictable scalar values;
 - aliases cover exact names, acronyms, and common variants;
 - wikilinks represent meaningful relationships;
 - large imported documents are split or structured with headings.
