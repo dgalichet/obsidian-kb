@@ -16,6 +16,8 @@ fn config_defaults_and_loading_are_vault_relative() {
             .benchmark_log_path()
             .ends_with(".obsidian-kb/benchmarks.jsonl")
     );
+    assert_eq!(config.mcp.idle_unload_seconds, 600);
+    assert!(!config.mcp.preload_embedder);
     assert!(!config.doctor.unresolved_links.allow_forward_links);
     assert!(config.embedding_cache_dir().ends_with("obsidian-kb/models"));
     assert!(
@@ -113,4 +115,23 @@ fn existing_configs_without_benchmark_section_still_load() {
             .benchmark_log_path()
             .ends_with(".obsidian-kb/benchmarks.jsonl")
     );
+}
+
+#[test]
+fn existing_configs_without_mcp_section_still_load() {
+    let temp = tempfile::tempdir().unwrap();
+    let vault_path = temp.path().join("vault");
+    std::fs::create_dir_all(&vault_path).unwrap();
+
+    let original = AppConfig::default_for_vault_in(&vault_path, None, temp.path()).unwrap();
+    let mut toml: toml::Value = toml::to_string_pretty(&original).unwrap().parse().unwrap();
+    toml.as_table_mut().unwrap().remove("mcp");
+
+    let path = temp.path().join(".obsidian-kb.toml");
+    std::fs::write(&path, toml::to_string_pretty(&toml).unwrap()).unwrap();
+
+    let loaded = config::load_existing(None, Some(&path)).unwrap();
+
+    assert_eq!(loaded.mcp.idle_unload_seconds, 600);
+    assert!(!loaded.mcp.preload_embedder);
 }

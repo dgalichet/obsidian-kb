@@ -12,6 +12,7 @@ pub mod error;
 pub mod frontmatter;
 pub mod graph;
 pub mod markdown;
+pub mod mcp_server;
 pub mod models;
 pub mod normalization;
 pub mod output;
@@ -295,6 +296,10 @@ pub fn run() -> Result<()> {
             if fatal_count > 0 {
                 std::process::exit(2);
             }
+        }
+        Command::Mcp(args) => {
+            let config = config::load_existing(args.vault.as_deref(), global_config.as_deref())?;
+            mcp_server::run(config, args)?;
         }
         Command::Version => {
             println!("{} {}", env!("CARGO_PKG_NAME"), version::version());

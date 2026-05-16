@@ -12,3 +12,13 @@ fn version_command_prints_package_version() {
         .success()
         .stdout(predicate::eq(format!("obsidian-kb {expected_version}\n")));
 }
+
+#[test]
+fn help_lists_mcp_command() {
+    Command::cargo_bin("obsidian-kb")
+        .unwrap()
+        .arg("--help")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("mcp"));
+}

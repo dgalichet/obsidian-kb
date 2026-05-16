@@ -48,7 +48,18 @@ pub fn search_with_benchmark(
     config: &AppConfig,
     query: &str,
     options: SearchOptions,
+    benchmark: Option<&mut BenchmarkRun>,
+) -> Result<Vec<SearchHit>> {
+    search_with_vector_cache(config, query, options, benchmark, None)
+}
+
+/// Executes a search with an optional benchmark run and warm vector cache.
+pub fn search_with_vector_cache(
+    config: &AppConfig,
+    query: &str,
+    options: SearchOptions,
     mut benchmark: Option<&mut BenchmarkRun>,
+    vector_cache: Option<&mut vector_search::VectorSearchCache>,
 ) -> Result<Vec<SearchHit>> {
     let query = query.trim();
     if query.is_empty() {
@@ -74,13 +85,23 @@ pub fn search_with_benchmark(
     let vector = if matches!(options.mode, SearchMode::Vector | SearchMode::Hybrid)
         && config.embeddings.enabled
     {
-        vector_search::search_with_benchmark(
-            &db,
-            config,
-            query,
-            config.search.vector_candidates,
-            benchmark.as_deref_mut(),
-        )?
+        if let Some(vector_cache) = vector_cache {
+            vector_cache.search_with_benchmark(
+                &db,
+                config,
+                query,
+                config.search.vector_candidates,
+                benchmark.as_deref_mut(),
+            )?
+        } else {
+            vector_search::search_with_benchmark(
+                &db,
+                config,
+                query,
+                config.search.vector_candidates,
+                benchmark.as_deref_mut(),
+            )?
+        }
     } else {
         Vec::new()
     };
