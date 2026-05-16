@@ -27,7 +27,23 @@ pub fn chunk_markdown(
     headings: &[Heading],
     config: &IndexConfig,
 ) -> Vec<ChunkRecord> {
-    let sections = sections_by_heading(body, headings);
+    chunk_markdown_with_body_start_line(note_path, title, tags, body, 1, headings, config)
+}
+
+/// Chunks Markdown body content that starts after earlier source-file lines.
+///
+/// `headings` must use source-file line numbers in the same coordinate space as
+/// `body_start_line`.
+pub fn chunk_markdown_with_body_start_line(
+    note_path: &str,
+    title: &str,
+    tags: &[String],
+    body: &str,
+    body_start_line: usize,
+    headings: &[Heading],
+    config: &IndexConfig,
+) -> Vec<ChunkRecord> {
+    let sections = sections_by_heading(body, body_start_line, headings);
     let context = ChunkContext {
         note_path,
         title,
@@ -54,17 +70,17 @@ pub fn chunk_markdown(
     chunks
 }
 
-fn sections_by_heading(body: &str, headings: &[Heading]) -> Vec<Block> {
+fn sections_by_heading(body: &str, body_start_line: usize, headings: &[Heading]) -> Vec<Block> {
     let mut sections = Vec::new();
     let mut heading_stack: Vec<(usize, String)> = Vec::new();
     let mut heading_index = 0;
     let mut current = String::new();
-    let mut current_start = 1;
+    let mut current_start = body_start_line;
     let mut current_heading = String::new();
     let mut current_level = None;
 
     for (line_index, line) in body.lines().enumerate() {
-        let line_no = line_index + 1;
+        let line_no = body_start_line + line_index;
         while heading_index < headings.len() && headings[heading_index].line == line_no {
             flush_block(
                 &mut sections,
@@ -93,7 +109,7 @@ fn sections_by_heading(body: &str, headings: &[Heading]) -> Vec<Block> {
         current.push_str(line);
     }
 
-    let final_line = body.lines().count().max(1);
+    let final_line = body_start_line + body.lines().count().saturating_sub(1);
     flush_block(
         &mut sections,
         &mut current,

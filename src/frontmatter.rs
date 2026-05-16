@@ -4,6 +4,7 @@ use serde_json::{Map, Value};
 pub struct FrontmatterParse {
     pub metadata: Value,
     pub body: String,
+    pub body_start_line: usize,
     pub warning: Option<String>,
 }
 
@@ -22,15 +23,18 @@ pub fn parse(content: &str) -> FrontmatterParse {
             let yaml = &content[first_line.len()..offset];
             let body_start = offset + line.len();
             let body = content.get(body_start..).unwrap_or_default().to_string();
+            let body_start_line = line_number_at(content, body_start);
             return match serde_yaml::from_str::<serde_yaml::Value>(yaml) {
                 Ok(value) => FrontmatterParse {
                     metadata: yaml_to_json(value),
                     body,
+                    body_start_line,
                     warning: None,
                 },
                 Err(error) => FrontmatterParse {
                     metadata: Value::Object(Map::new()),
                     body,
+                    body_start_line,
                     warning: Some(format!("invalid frontmatter: {error}")),
                 },
             };
@@ -41,6 +45,7 @@ pub fn parse(content: &str) -> FrontmatterParse {
     FrontmatterParse {
         metadata: Value::Object(Map::new()),
         body: content.to_string(),
+        body_start_line: 1,
         warning: Some("unterminated frontmatter block".to_string()),
     }
 }
@@ -88,8 +93,19 @@ fn empty(content: &str) -> FrontmatterParse {
     FrontmatterParse {
         metadata: Value::Object(Map::new()),
         body: content.to_string(),
+        body_start_line: 1,
         warning: None,
     }
+}
+
+fn line_number_at(content: &str, byte_offset: usize) -> usize {
+    content
+        .get(..byte_offset)
+        .unwrap_or(content)
+        .bytes()
+        .filter(|byte| *byte == b'\n')
+        .count()
+        + 1
 }
 
 fn trimmed_string(value: &str) -> Option<String> {
