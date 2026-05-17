@@ -76,7 +76,47 @@ impl SearchFilters {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PropertyFilter {
     pub key: String,
+    pub operator: PropertyOperator,
     pub value: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PropertyOperator {
+    Eq,
+    NotEq,
+    Gt,
+    Gte,
+    Lt,
+    Lte,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TagFacet {
+    pub tag: String,
+    pub notes: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PropertyFacetReport {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
+    pub keys: Vec<PropertyKeyFacet>,
+    pub values: Vec<PropertyValueFacet>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PropertyKeyFacet {
+    pub key: String,
+    pub notes: usize,
+    pub values: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PropertyValueFacet {
+    pub key: String,
+    pub value: String,
+    pub value_type: String,
+    pub notes: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

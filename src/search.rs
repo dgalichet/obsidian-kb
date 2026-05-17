@@ -5,7 +5,7 @@ use crate::benchmark::{self, BenchmarkRun};
 use crate::config::AppConfig;
 use crate::db::Db;
 use crate::error::KbError;
-use crate::models::{PropertyFilter, SearchFilters, SearchHit, SearchMode};
+use crate::models::{PropertyFilter, PropertyOperator, SearchFilters, SearchHit, SearchMode};
 use crate::paths::KbPaths;
 use crate::scoring::{FusedCandidate, reciprocal_rank_fusion};
 use crate::{properties, tantivy_index, vector_search};
@@ -46,9 +46,7 @@ pub fn search(
 }
 
 pub fn parse_property_filter(value: &str) -> Result<PropertyFilter> {
-    let Some((key, property_value)) = value.split_once('=') else {
-        bail!("property filters must use KEY=VALUE syntax");
-    };
+    let (key, operator, property_value) = split_property_filter(value)?;
     let key = properties::normalize_key(key);
     let property_value = property_value.trim();
     if key.is_empty() || property_value.is_empty() {
@@ -56,8 +54,27 @@ pub fn parse_property_filter(value: &str) -> Result<PropertyFilter> {
     }
     Ok(PropertyFilter {
         key,
+        operator,
         value: property_value.to_string(),
     })
+}
+
+fn split_property_filter(value: &str) -> Result<(&str, PropertyOperator, &str)> {
+    for (token, operator) in [
+        (">=", PropertyOperator::Gte),
+        ("<=", PropertyOperator::Lte),
+        ("!=", PropertyOperator::NotEq),
+        (">", PropertyOperator::Gt),
+        ("<", PropertyOperator::Lt),
+        ("=", PropertyOperator::Eq),
+    ] {
+        if let Some((key, property_value)) = value.split_once(token) {
+            return Ok((key, operator, property_value));
+        }
+    }
+    bail!(
+        "property filters must use KEY=VALUE, KEY!=VALUE, KEY>=VALUE, KEY<=VALUE, KEY>VALUE, or KEY<VALUE syntax"
+    );
 }
 
 /// Executes a search and optionally records phase timings into a benchmark run.

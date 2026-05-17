@@ -91,7 +91,9 @@ default because most real queries benefit from both lexical and semantic signals
 
 Structured filters run against SQLite metadata. `--tag` requires tags extracted
 from frontmatter or Markdown body text, and `--property KEY=VALUE` requires a
-simple YAML frontmatter property value. Repeated filters use AND semantics.
+simple YAML frontmatter property value. Property filters also support `!=`,
+`>`, `>=`, `<`, and `<=` for scalar values. Repeated filters use AND semantics.
+`obsidian-kb tags` and `obsidian-kb properties` expose available filter values.
 Filters are applied after lexical/vector candidate retrieval and before graph
 expansion, so filtered graph results must satisfy the same metadata constraints.
 When a search has filters but no query text, `obsidian-kb` returns matching
