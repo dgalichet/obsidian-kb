@@ -213,9 +213,11 @@ down into embedder initialization, query embedding, stored embedding loading, an
 cosine scoring timings.
 
 `obsidian-kb mcp` runs a local MCP stdio server exposing `search`, `show`,
-`stats`, `warmup`, `unload`, and `status` tools. Vector and hybrid searches reuse
-a warm local FastEmbed model while the process remains active. The cached model
-is unloaded after `mcp.idle_unload_seconds` without stopping the MCP process; use
+`tags`, `properties`, `stats`, `warmup`, `unload`, and `status` tools. The MCP
+`search` tool accepts structured tag and property filters, using array arguments
+or the singular `tag` and `property` aliases. Vector and hybrid searches reuse a
+warm local FastEmbed model while the process remains active. The cached model is
+unloaded after `mcp.idle_unload_seconds` without stopping the MCP process; use
 `0` to disable automatic unload. `preload_embedder = true` initializes the model
 when the MCP server starts.
 

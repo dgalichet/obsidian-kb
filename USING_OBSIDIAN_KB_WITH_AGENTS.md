@@ -243,6 +243,8 @@ MCP mode exposes these tools:
 
 - `search`: run BM25, vector, or hybrid search with the same options as the CLI;
 - `show`: read one selected chunk by ID;
+- `tags`: list indexed tags, optionally filtered by prefix;
+- `properties`: list indexed frontmatter property keys, or values for one key;
 - `stats`: inspect indexed vault statistics;
 - `warmup`: load the local embedding model and embeddings into memory;
 - `unload`: drop the warm embedding cache when it is no longer needed;
@@ -382,6 +384,22 @@ Apply filters with search:
 obsidian-kb search "retrieval" --tag ai/context --property status=active --json
 obsidian-kb search --property type=book --property status=reading --json
 obsidian-kb search --property 'created>=2026-01-01' --json
+```
+
+In MCP mode, use the `tags` and `properties` tools for discovery, then pass
+filters to `search` as arrays:
+
+```json
+{ "prefix": "ai" }
+{ "key": "status" }
+{ "query": "retrieval", "mode": "hybrid", "tags": ["ai/context"], "properties": ["status=active"] }
+```
+
+For clients that handle single values more naturally, the MCP `search` tool also
+accepts `tag` and `property` aliases:
+
+```json
+{ "query": "retrieval", "mode": "bm25", "tag": "ai/context", "property": "status=active" }
 ```
 
 Rules:

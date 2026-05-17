@@ -239,9 +239,11 @@ Optional benchmark logging can be enabled in `.obsidian-kb.toml` with
 unless `include_query = true`.
 
 For MCP clients, `obsidian-kb mcp` runs a local stdio server with search, show,
-stats, warmup, unload, and status tools. Hybrid and vector searches keep the
-local embedding model warm between requests, then unload it automatically after
-the configured idle timeout.
+tags, properties, stats, warmup, unload, and status tools. The MCP `search` tool
+accepts `tags` and `properties` arrays, plus `tag` and `property` aliases for
+single filters. Hybrid and vector searches keep the local embedding model warm
+between requests, then unload it automatically after the configured idle
+timeout.
 
 ## What It Is Not
 

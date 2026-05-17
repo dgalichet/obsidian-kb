@@ -1,4 +1,4 @@
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result, anyhow, bail};
 use serde_json::{Value, json};
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::sync::mpsc::{self, RecvTimeoutError};
@@ -190,6 +190,8 @@ impl McpServer {
         let result = match name {
             "search" => self.tool_search(&arguments),
             "show" => self.tool_show(&arguments),
+            "tags" => self.tool_tags(&arguments),
+            "properties" => self.tool_properties(&arguments),
             "stats" => self.tool_stats(),
             "warmup" => self.tool_warmup(),
             "unload" => Ok(json!({
@@ -223,9 +225,13 @@ impl McpServer {
         let expand_graph = bool_arg(arguments, "expand_graph", false)?;
         let include_text = bool_arg(arguments, "include_text", false)?;
         let max_chars = usize_arg(arguments, "max_chars", 1200)?;
+        let mut tags = string_list_arg(arguments, "tags")?;
+        tags.extend(string_list_arg(arguments, "tag")?);
+        let mut properties = string_list_arg(arguments, "properties")?;
+        properties.extend(string_list_arg(arguments, "property")?);
         let filters = SearchFilters {
-            tags: string_array_arg(arguments, "tags")?,
-            properties: string_array_arg(arguments, "properties")?
+            tags,
+            properties: properties
                 .iter()
                 .map(|value| search::parse_property_filter(value))
                 .collect::<Result<Vec<_>>>()?,
@@ -277,6 +283,22 @@ impl McpServer {
             .load_chunk(chunk_id)?
             .with_context(|| format!("chunk not found: {chunk_id}"))?;
         serde_json::to_value(chunk).map_err(Into::into)
+    }
+
+    fn tool_tags(&self, arguments: &Value) -> Result<Value> {
+        let prefix = optional_string_arg(arguments, "prefix");
+        let top = usize_arg(arguments, "top", 50)?;
+        let paths = KbPaths::from_config(&self.config);
+        let db = Db::open(&paths.db_path)?;
+        serde_json::to_value(db.tag_facets(prefix, top)?).map_err(Into::into)
+    }
+
+    fn tool_properties(&self, arguments: &Value) -> Result<Value> {
+        let key = optional_string_arg(arguments, "key");
+        let top = usize_arg(arguments, "top", 50)?;
+        let paths = KbPaths::from_config(&self.config);
+        let db = Db::open(&paths.db_path)?;
+        serde_json::to_value(db.property_facets(key, top)?).map_err(Into::into)
     }
 
     fn tool_stats(&self) -> Result<Value> {
@@ -353,12 +375,28 @@ fn tools() -> Value {
                     "include_text": { "type": "boolean" },
                     "max_chars": { "type": "integer", "minimum": 0 },
                     "tags": {
+                        "description": "Tags to require; repeat values in the array for AND filters.",
                         "type": "array",
                         "items": { "type": "string" }
                     },
+                    "tag": {
+                        "description": "Alias for tags when passing a single tag.",
+                        "oneOf": [
+                            { "type": "string" },
+                            { "type": "array", "items": { "type": "string" } }
+                        ]
+                    },
                     "properties": {
+                        "description": "Frontmatter property filters to require; repeat values in the array for AND filters.",
                         "type": "array",
                         "items": { "type": "string", "description": "KEY=VALUE, KEY!=VALUE, KEY>=VALUE, KEY<=VALUE, KEY>VALUE, or KEY<VALUE" }
+                    },
+                    "property": {
+                        "description": "Alias for properties when passing a single property filter.",
+                        "oneOf": [
+                            { "type": "string" },
+                            { "type": "array", "items": { "type": "string", "description": "KEY=VALUE, KEY!=VALUE, KEY>=VALUE, KEY<=VALUE, KEY>VALUE, or KEY<VALUE" } }
+                        ]
                     }
                 }
             }
@@ -372,6 +410,28 @@ fn tools() -> Value {
                     "chunk_id": { "type": "string" }
                 },
                 "required": ["chunk_id"]
+            }
+        },
+        {
+            "name": "tags",
+            "description": "List indexed tags available for search filters.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "prefix": { "type": "string" },
+                    "top": { "type": "integer", "minimum": 0 }
+                }
+            }
+        },
+        {
+            "name": "properties",
+            "description": "List indexed frontmatter property keys, or values for one key.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "key": { "type": "string" },
+                    "top": { "type": "integer", "minimum": 0 }
+                }
             }
         },
         {
@@ -434,22 +494,23 @@ fn optional_string_arg<'a>(arguments: &'a Value, name: &str) -> Option<&'a str> 
     arguments.get(name).and_then(Value::as_str)
 }
 
-fn string_array_arg(arguments: &Value, name: &str) -> Result<Vec<String>> {
+fn string_list_arg(arguments: &Value, name: &str) -> Result<Vec<String>> {
     let Some(value) = arguments.get(name) else {
         return Ok(Vec::new());
     };
-    let values = value
-        .as_array()
-        .with_context(|| format!("argument `{name}` must be an array of strings"))?;
-    values
-        .iter()
-        .map(|value| {
-            value
-                .as_str()
-                .map(ToOwned::to_owned)
-                .with_context(|| format!("argument `{name}` must contain only strings"))
-        })
-        .collect()
+    match value {
+        Value::String(value) => Ok(vec![value.to_owned()]),
+        Value::Array(values) => values
+            .iter()
+            .map(|value| {
+                value
+                    .as_str()
+                    .map(ToOwned::to_owned)
+                    .with_context(|| format!("argument `{name}` must contain only strings"))
+            })
+            .collect(),
+        _ => bail!("argument `{name}` must be a string or array of strings"),
+    }
 }
 
 fn bool_arg(arguments: &Value, name: &str, default: bool) -> Result<bool> {
@@ -487,6 +548,7 @@ fn search_mode_name(mode: SearchMode) -> &'static str {
 mod tests {
     use super::*;
     use std::io::Cursor;
+    use tempfile::TempDir;
 
     #[test]
     fn reads_content_length_framed_message() {
@@ -504,5 +566,133 @@ mod tests {
         write_message(&mut output, r#"{"ok":true}"#).unwrap();
 
         assert_eq!(String::from_utf8(output).unwrap(), "{\"ok\":true}\n");
+    }
+
+    #[test]
+    fn lists_metadata_tools_and_filter_arguments() {
+        let tools = tools();
+
+        assert!(has_tool(&tools, "search"));
+        assert!(has_tool(&tools, "tags"));
+        assert!(has_tool(&tools, "properties"));
+
+        let search = tool_named(&tools, "search");
+        let search_args = &search["inputSchema"]["properties"];
+        assert!(search_args.get("tags").is_some());
+        assert!(search_args.get("tag").is_some());
+        assert!(search_args.get("properties").is_some());
+        assert!(search_args.get("property").is_some());
+    }
+
+    #[test]
+    fn metadata_tools_and_search_filters_work() {
+        let (_temp, config) = indexed_test_config();
+        let mut server = McpServer::new(config);
+
+        let tags = call_tool_json(&mut server, "tags", json!({ "prefix": "research" }));
+        assert_eq!(tags[0]["tag"], "research");
+
+        let property_values = call_tool_json(&mut server, "properties", json!({ "key": "status" }));
+        assert!(
+            property_values["values"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|value| value["value"] == "active")
+        );
+
+        let hits = call_tool_json(
+            &mut server,
+            "search",
+            json!({
+                "mode": "bm25",
+                "tag": "research",
+                "property": "status=active"
+            }),
+        );
+        assert_eq!(hits[0]["path"], "alpha.md");
+
+        let hits = call_tool_json(
+            &mut server,
+            "search",
+            json!({
+                "mode": "bm25",
+                "tags": ["business"],
+                "properties": ["status=done"]
+            }),
+        );
+        assert_eq!(hits[0]["path"], "beta.md");
+    }
+
+    fn has_tool(tools: &Value, name: &str) -> bool {
+        tools
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|tool| tool["name"] == name)
+    }
+
+    fn tool_named<'a>(tools: &'a Value, name: &str) -> &'a Value {
+        tools
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|tool| tool["name"] == name)
+            .unwrap()
+    }
+
+    fn call_tool_json(server: &mut McpServer, name: &str, arguments: Value) -> Value {
+        let result = server
+            .call_tool(&json!({ "name": name, "arguments": arguments }))
+            .unwrap();
+        assert_eq!(result["isError"], false);
+        serde_json::from_str(result["content"][0]["text"].as_str().unwrap()).unwrap()
+    }
+
+    fn indexed_test_config() -> (TempDir, AppConfig) {
+        let temp = tempfile::tempdir().unwrap();
+        let vault = temp.path().join("vault");
+        std::fs::create_dir_all(&vault).unwrap();
+        std::fs::write(
+            vault.join("alpha.md"),
+            r#"---
+tags: [research, ai/context]
+status: active
+priority: 2
+---
+# Alpha
+
+Alpha retrieval note.
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            vault.join("beta.md"),
+            r#"---
+tags: [business]
+status: done
+priority: 1
+---
+# Beta
+
+Beta planning note.
+"#,
+        )
+        .unwrap();
+
+        let mut config = AppConfig::default_for_vault_in(&vault, None, temp.path()).unwrap();
+        config.embeddings.enabled = false;
+        config.search.default_mode = "bm25".to_string();
+
+        let mut notes = crate::vault::load_vault(&config).unwrap();
+        let graph_report = crate::graph::resolve_links(&mut notes);
+        let paths = KbPaths::from_config(&config);
+        let mut db = Db::open(&paths.db_path).unwrap();
+        db.replace_index(&notes, &graph_report.warnings).unwrap();
+        let chunks = db.load_all_chunks().unwrap();
+        crate::tantivy_index::rebuild(&paths.tantivy_dir, &chunks, config.index.remove_diacritics)
+            .unwrap();
+
+        (temp, config)
     }
 }
