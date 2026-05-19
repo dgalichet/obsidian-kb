@@ -467,7 +467,7 @@ fn tools() -> Value {
     json!([
         {
             "name": "search",
-            "description": "Search the indexed Obsidian vault. Hybrid and vector searches reuse a warm local embedding model and cached stored embeddings while loaded.",
+            "description": "Search the indexed Obsidian vault and return note-level results with matched chunks. Hybrid and vector searches reuse a warm local embedding model and cached stored embeddings while loaded.",
             "inputSchema": {
                 "type": "object",
                 "properties": {

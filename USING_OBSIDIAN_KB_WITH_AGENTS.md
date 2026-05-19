@@ -446,19 +446,20 @@ wording outside the chunk.
 
 ## Search Result Fields
 
-JSON search results are designed for explainable retrieval. Use these fields:
+JSON search results are grouped by note and designed for explainable retrieval.
+Use these fields:
 
 - `final_rank` and `final_score`;
-- `bm25_rank` and `bm25_score`;
-- `vector_rank` and `vector_score`;
-- `graph_boost`;
 - `path`;
 - `title`;
-- `heading_path`;
-- `start_line` and `end_line`;
 - `tags`;
-- `snippet`;
-- `chunk_id`;
+- `best_chunk_id`;
+- `best_heading`;
+- `best_start_line` and `best_end_line`;
+- `best_snippet`;
+- `matched_chunks`;
+- `chunks`, where each matched chunk includes heading, line range, snippet,
+  chunk ID, BM25/vector ranks and scores, source, graph boost, and optional text;
 - `text`, when `--include-text` is set.
 
 A high score means likely relevance, not factual certainty. Verify facts from

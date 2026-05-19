@@ -32,7 +32,7 @@ fn show_graph_and_stats_support_json() {
         .unwrap();
     assert!(output.status.success());
     let hits: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    let chunk_id = hits[0]["chunk_id"].as_str().unwrap();
+    let chunk_id = hits[0]["best_chunk_id"].as_str().unwrap();
 
     Command::cargo_bin("obsidian-kb")
         .unwrap()

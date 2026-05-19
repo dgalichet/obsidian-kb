@@ -103,11 +103,12 @@ simple YAML frontmatter property value. Property filters also support `!=`,
 Filters are applied after lexical/vector candidate retrieval and before graph
 expansion, so filtered graph results must satisfy the same metadata constraints.
 When a search has filters but no query text, `obsidian-kb` returns matching
-chunks ordered by vault path and chunk index.
+notes ordered by their first matching chunk.
 
-Search JSON includes explainability fields: final rank, final score, BM25 rank
-and score, vector rank and score, graph boost, path, title, heading path, line
-range, tags, snippet, and chunk ID.
+Search JSON is grouped by note. Each note includes final rank, final score,
+path, title, tags, the best chunk, matched chunk count, and matched chunks with
+BM25/vector ranks and scores, graph boost, headings, line ranges, snippets, and
+chunk IDs.
 
 ## Graph Expansion
 

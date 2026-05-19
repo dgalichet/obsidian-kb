@@ -39,7 +39,7 @@ pub fn print_index_summary(stats: &IndexStats, graph_warnings: usize, embeddings
 pub fn print_search_table(hits: &[SearchHit]) {
     let mut table = Table::new();
     table.load_preset(UTF8_FULL).set_header(vec![
-        "rank", "score", "bm25", "vector", "graph", "path", "heading", "snippet",
+        "rank", "score", "bm25", "vector", "graph", "path", "heading", "matches", "snippet",
     ]);
     for hit in hits {
         table.add_row(vec![
@@ -53,12 +53,13 @@ pub fn print_search_table(hits: &[SearchHit]) {
                 "-".to_string()
             }),
             Cell::new(&hit.path),
-            Cell::new(if hit.heading_path.is_empty() {
+            Cell::new(if hit.best_heading.is_empty() {
                 "-"
             } else {
-                &hit.heading_path
+                &hit.best_heading
             }),
-            Cell::new(&hit.snippet),
+            Cell::new(hit.matched_chunks),
+            Cell::new(&hit.best_snippet),
         ]);
     }
     println!("{table}");

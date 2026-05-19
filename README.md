@@ -128,8 +128,9 @@ obsidian-kb search "query" --mode hybrid --expand-graph --json
 obsidian-kb search "query" --mode hybrid --top 5 --include-text --max-chars 1200 --json
 ```
 
-The JSON output includes file paths, titles, headings, line ranges, tags,
-snippets, chunk IDs, ranks, scores, and graph boosts.
+The JSON output is grouped by note. Each note includes its best chunk, matched
+chunk count, matched chunks with headings, line ranges, snippets, chunk IDs,
+ranks, scores, and graph boosts.
 
 ## Related Notes
 
