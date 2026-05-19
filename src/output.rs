@@ -4,8 +4,8 @@ use owo_colors::OwoColorize;
 use serde::Serialize;
 
 use crate::models::{
-    ChunkRecord, DoctorReport, GraphView, IndexStats, PropertyFacetReport, SearchHit, StatsReport,
-    TagFacet,
+    ChunkRecord, DoctorReport, GraphView, IndexStats, PropertyFacetReport, RelatedReport,
+    SearchHit, StatsReport, TagFacet,
 };
 
 pub fn print_index_summary(stats: &IndexStats, graph_warnings: usize, embeddings: usize) {
@@ -59,6 +59,49 @@ pub fn print_search_table(hits: &[SearchHit]) {
                 &hit.heading_path
             }),
             Cell::new(&hit.snippet),
+        ]);
+    }
+    println!("{table}");
+}
+
+pub fn print_related_table(report: &RelatedReport) {
+    match &report.source {
+        crate::models::RelatedSource::Note { path, title, .. } => {
+            println!("{} {} ({})", "source".green(), path, title);
+        }
+        crate::models::RelatedSource::Text { chars } => {
+            println!("{} draft text ({} chars)", "source".green(), chars);
+        }
+    }
+
+    let mut table = Table::new();
+    table.load_preset(UTF8_FULL).set_header(vec![
+        "rank",
+        "score",
+        "path",
+        "title",
+        "best heading",
+        "matches",
+        "snippet",
+    ]);
+    for note in &report.notes {
+        let snippet = note
+            .chunks
+            .first()
+            .map(|chunk| chunk.snippet.as_str())
+            .unwrap_or("");
+        table.add_row(vec![
+            Cell::new(note.rank),
+            Cell::new(format!("{:.4}", note.score)),
+            Cell::new(&note.path),
+            Cell::new(&note.title),
+            Cell::new(if note.best_heading.is_empty() {
+                "-"
+            } else {
+                &note.best_heading
+            }),
+            Cell::new(note.matched_chunks),
+            Cell::new(snippet),
         ]);
     }
     println!("{table}");

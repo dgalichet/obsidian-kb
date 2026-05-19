@@ -80,6 +80,19 @@ Search for a vague idea:
 obsidian-kb search "notes about context saturation" --mode vector --top 5
 ```
 
+Find notes similar to an indexed note:
+
+```bash
+obsidian-kb related "ai/contexte.md" --top 5
+```
+
+Find notes similar to draft text that is not indexed yet:
+
+```bash
+pbpaste | obsidian-kb related --stdin --top 5
+obsidian-kb related --text "draft paragraph..." --top 5
+```
+
 Use hybrid search plus the Obsidian graph:
 
 ```bash
@@ -117,6 +130,24 @@ obsidian-kb search "query" --mode hybrid --top 5 --include-text --max-chars 1200
 
 The JSON output includes file paths, titles, headings, line ranges, tags,
 snippets, chunk IDs, ranks, scores, and graph boosts.
+
+## Related Notes
+
+`related` searches for notes that are semantically close to a source note or to
+draft text. For indexed notes, it reuses the stored chunk embeddings for that
+note, averages them into a source vector, scores indexed chunks, excludes the
+source note, and aggregates the best matching chunks by note.
+
+```bash
+obsidian-kb related "note title or path" --top 10 --json
+obsidian-kb related --stdin --top 10 --json
+```
+
+Use `--candidates N` to change how many vector chunk candidates are scored
+before note-level aggregation. With benchmarking enabled, `related` logs the
+same vector load/scoring phases as `search`, plus `related_aggregate_notes_ms`.
+In MCP and HTTP serve mode, repeated vector and related searches reuse cached
+stored embeddings and report `vector_embeddings_cached`.
 
 ## Structured Filters
 
@@ -238,12 +269,12 @@ Optional benchmark logging can be enabled in `.obsidian-kb.toml` with
 `.obsidian-kb/benchmarks.jsonl` by default, and search query text is omitted
 unless `include_query = true`.
 
-For MCP clients, `obsidian-kb mcp` runs a local stdio server with search, show,
-graph, tags, properties, stats, warmup, unload, and status tools. The MCP `search` tool
-accepts `tags` and `properties` arrays, plus `tag` and `property` aliases for
-single filters. Hybrid and vector searches keep the local embedding model warm
-between requests, then unload it automatically after the configured idle
-timeout.
+For MCP clients, `obsidian-kb mcp` runs a local stdio server with search,
+related, show, graph, tags, properties, stats, warmup, unload, and status tools.
+The MCP `search` tool accepts `tags` and `properties` arrays, plus `tag` and
+`property` aliases for single filters. Hybrid and vector searches keep the local
+embedding model and stored embeddings warm between requests, then unload them
+automatically after the configured idle timeout.
 
 For local HTTP clients, `obsidian-kb serve` binds to `127.0.0.1:27124` by
 default and prints the chosen URL. Use `--port` to override the port. It exposes

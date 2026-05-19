@@ -203,6 +203,50 @@ pub struct SearchHit {
     pub graph: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RelatedReport {
+    pub source: RelatedSource,
+    pub notes: Vec<RelatedNote>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum RelatedSource {
+    Note {
+        identifier: String,
+        path: String,
+        title: String,
+        source_chunks: usize,
+    },
+    Text {
+        chars: usize,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RelatedNote {
+    pub rank: usize,
+    pub score: f32,
+    pub path: String,
+    pub title: String,
+    pub tags: Vec<String>,
+    pub best_chunk_id: String,
+    pub best_heading: String,
+    pub best_score: f32,
+    pub matched_chunks: usize,
+    pub chunks: Vec<RelatedChunk>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RelatedChunk {
+    pub chunk_id: String,
+    pub score: f32,
+    pub heading_path: String,
+    pub start_line: usize,
+    pub end_line: usize,
+    pub snippet: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct SearchCandidate {
     pub chunk_id: String,

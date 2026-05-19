@@ -19,6 +19,7 @@ pub enum Command {
     Init(InitArgs),
     Index(IndexArgs),
     Search(SearchArgs),
+    Related(RelatedArgs),
     Show(ShowArgs),
     Graph(GraphArgs),
     Stats(StatsArgs),
@@ -29,6 +30,44 @@ pub enum Command {
     Serve(ServeArgs),
     #[command(about = "Print version information")]
     Version,
+}
+
+#[derive(Debug, Args)]
+pub struct RelatedArgs {
+    #[arg(value_name = "NOTE", num_args = 0..)]
+    pub note: Vec<String>,
+
+    #[arg(long, help = "Path to the Obsidian vault")]
+    pub vault: Option<PathBuf>,
+
+    #[arg(
+        long,
+        value_name = "TEXT",
+        conflicts_with = "stdin",
+        help = "Find notes related to draft text that is not indexed yet"
+    )]
+    pub text: Option<String>,
+
+    #[arg(
+        long,
+        conflicts_with = "text",
+        help = "Read draft text from standard input instead of an indexed note"
+    )]
+    pub stdin: bool,
+
+    #[arg(long, alias = "limit", default_value_t = 10)]
+    pub top: usize,
+
+    #[arg(
+        long,
+        default_value_t = 0,
+        value_name = "N",
+        help = "Vector chunk candidates to score before note aggregation; 0 uses a benchmark-friendly default"
+    )]
+    pub candidates: usize,
+
+    #[arg(long, help = "Emit machine-readable JSON")]
+    pub json: bool,
 }
 
 #[derive(Debug, Args)]

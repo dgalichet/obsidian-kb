@@ -89,6 +89,12 @@ questions, synonyms, and ideas where the exact wording may differ from the notes
 `hybrid` combines BM25 and vector ranks with Reciprocal Rank Fusion. It is the
 default because most real queries benefit from both lexical and semantic signals.
 
+`related` finds notes similar to an indexed note or draft text. For indexed
+notes, it averages the note's stored chunk embeddings into a source vector,
+scores stored embeddings, excludes the source note, and aggregates matching
+chunks by note. For draft text, it embeds the provided text locally and uses the
+same aggregation path.
+
 Structured filters run against SQLite metadata. `--tag` requires tags extracted
 from frontmatter or Markdown body text, and `--property KEY=VALUE` requires a
 simple YAML frontmatter property value. Property filters also support `!=`,
@@ -212,15 +218,22 @@ Vector search records `vector_ms` as the total vector phase and also breaks it
 down into embedder initialization, query embedding, stored embedding loading, and
 cosine scoring timings.
 
-`obsidian-kb mcp` runs a local MCP stdio server exposing `search`, `show`,
-`graph`, `tags`, `properties`, `stats`, `warmup`, `unload`, and `status` tools.
-The MCP `search` tool accepts structured tag and property filters, using array
-arguments or the singular `tag` and `property` aliases. Vector and hybrid
-searches reuse a
-warm local FastEmbed model while the process remains active. The cached model is
-unloaded after `mcp.idle_unload_seconds` without stopping the MCP process; use
-`0` to disable automatic unload. `preload_embedder = true` initializes the model
-when the MCP server starts.
+Related-note search reuses the stored embedding load and cosine scoring phases,
+and adds source-vector and note-aggregation metadata such as candidate count,
+result count, `related_source_ms`, `vector_ms`,
+`related_load_source_embeddings_ms`, and `related_aggregate_notes_ms`. MCP and
+HTTP serve mode also report `vector_embeddings_cached` to distinguish cold
+SQLite loads from warm in-memory searches.
+
+`obsidian-kb mcp` runs a local MCP stdio server exposing `search`, `related`,
+`show`, `graph`, `tags`, `properties`, `stats`, `warmup`, `unload`, and `status`
+tools. The MCP `search` tool accepts structured tag and property filters, using
+array arguments or the singular `tag` and `property` aliases. Vector, hybrid,
+and related searches reuse a warm local FastEmbed model and decoded stored
+embeddings while the process remains active. Cached vector state is unloaded
+after `mcp.idle_unload_seconds` without stopping the MCP process; use `0` to
+disable automatic unload. `preload_embedder = true` initializes the model when
+the MCP server starts.
 
 `obsidian-kb serve` exposes the same local retrieval surface over HTTP for local
 clients such as future Obsidian plugins. By default it binds to
@@ -286,6 +299,8 @@ files.
 ## Current Limitations
 
 - Vector search is brute force over SQLite-stored embeddings.
+- Related-note search uses the same brute-force vector backend, then aggregates
+  chunk matches by note.
 - Routine indexing preserves unchanged embeddings but still refreshes
   SQLite/Tantivy surfaces for consistency.
 - Graph expansion is depth-limited and intentionally shallow.

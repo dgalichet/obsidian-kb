@@ -10,6 +10,7 @@ use crate::config::AppConfig;
 use crate::db::Db;
 use crate::models::{SearchFilters, SearchMode};
 use crate::paths::KbPaths;
+use crate::related::{self, RelatedInput, RelatedOptions};
 use crate::search::{self, SearchOptions};
 use crate::vector_search::VectorSearchCache;
 
@@ -97,7 +98,19 @@ impl McpServer {
     }
 
     pub(crate) fn warm_up_vector_cache(&mut self) -> Result<()> {
-        self.vector_cache.warm_up(&self.config)
+        self.vector_cache.warm_up(&self.config)?;
+        if self.config.embeddings.enabled {
+            let paths = KbPaths::from_config(&self.config);
+            if paths.db_path.exists() {
+                let db = Db::open(&paths.db_path)?;
+                self.vector_cache.warm_up_embeddings(&db, &self.config)?;
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) fn unload_vector_cache(&mut self) -> bool {
+        self.vector_cache.unload()
     }
 
     pub(crate) fn unload_idle_vector_cache(&mut self) {
@@ -201,6 +214,7 @@ impl McpServer {
             .unwrap_or_else(|| json!({}));
         let result = match name {
             "search" => self.tool_search(&arguments),
+            "related" => self.tool_related(&arguments),
             "show" => self.tool_show(&arguments),
             "graph" => self.tool_graph(&arguments),
             "tags" => self.tool_tags(&arguments),
@@ -209,7 +223,9 @@ impl McpServer {
             "warmup" => self.tool_warmup(),
             "unload" => Ok(json!({
                 "unloaded": self.vector_cache.unload(),
-                "vector_embedder_loaded": self.vector_cache.is_loaded()
+                "vector_embedder_loaded": self.vector_cache.is_loaded(),
+                "vector_embeddings_loaded": self.vector_cache.embeddings_loaded(),
+                "vector_embedding_count": self.vector_cache.cached_embedding_count()
             })),
             "status" => Ok(self.tool_status()),
             _ => Err(anyhow!("unknown tool `{name}`")),
@@ -285,6 +301,61 @@ impl McpServer {
         serde_json::to_value(hits).map_err(Into::into)
     }
 
+    pub(crate) fn tool_related(&mut self, arguments: &Value) -> Result<Value> {
+        let note = optional_string_arg(arguments, "note");
+        let text = optional_string_arg(arguments, "text");
+        let source_count = if note.is_some() { 1 } else { 0 } + if text.is_some() { 1 } else { 0 };
+        if source_count != 1 {
+            bail!("related requires exactly one source: note or text");
+        }
+        let input = if let Some(note) = note {
+            RelatedInput::Note(note.to_string())
+        } else {
+            RelatedInput::Text(text.unwrap_or_default().to_string())
+        };
+        let top = usize_arg(arguments, "top", 10)?;
+        let candidates = usize_arg(arguments, "candidates", 0)?;
+        let config = self.config.clone();
+        let vector_cache = &mut self.vector_cache;
+        let report = benchmark::measure(
+            &config,
+            "mcp_related",
+            |benchmark| {
+                benchmark.set_field("top", top);
+                benchmark.set_field("candidates", candidates);
+                match &input {
+                    RelatedInput::Note(identifier) => {
+                        benchmark.set_field("source_kind", "note");
+                        benchmark.set_field("source_identifier_chars", identifier.chars().count());
+                        if config.benchmark.include_query {
+                            benchmark.set_field("source_identifier", identifier);
+                        }
+                    }
+                    RelatedInput::Text(text) => {
+                        benchmark.set_field("source_kind", "text");
+                        benchmark.set_field("source_text_chars", text.chars().count());
+                        if config.benchmark.include_query {
+                            benchmark.set_field("source_text", text);
+                        }
+                    }
+                }
+            },
+            |benchmark| {
+                related::find_related_with_vector_cache(
+                    &config,
+                    input.clone(),
+                    RelatedOptions {
+                        limit: top,
+                        candidates,
+                    },
+                    benchmark,
+                    Some(vector_cache),
+                )
+            },
+        )?;
+        serde_json::to_value(report).map_err(Into::into)
+    }
+
     pub(crate) fn tool_show(&self, arguments: &Value) -> Result<Value> {
         let chunk_id = string_arg(arguments, "chunk_id")?;
         let paths = KbPaths::from_config(&self.config);
@@ -329,15 +400,19 @@ impl McpServer {
     }
 
     pub(crate) fn tool_warmup(&mut self) -> Result<Value> {
-        self.vector_cache.warm_up(&self.config)?;
+        self.warm_up_vector_cache()?;
         Ok(json!({
-            "vector_embedder_loaded": self.vector_cache.is_loaded()
+            "vector_embedder_loaded": self.vector_cache.is_loaded(),
+            "vector_embeddings_loaded": self.vector_cache.embeddings_loaded(),
+            "vector_embedding_count": self.vector_cache.cached_embedding_count()
         }))
     }
 
     pub(crate) fn tool_status(&self) -> Value {
         json!({
             "vector_embedder_loaded": self.vector_embedder_loaded(),
+            "vector_embeddings_loaded": self.vector_cache.embeddings_loaded(),
+            "vector_embedding_count": self.vector_cache.cached_embedding_count(),
             "idle_unload_seconds": self.config.mcp.idle_unload_seconds
         })
     }
@@ -392,7 +467,7 @@ fn tools() -> Value {
     json!([
         {
             "name": "search",
-            "description": "Search the indexed Obsidian vault. Hybrid and vector searches reuse a warm local embedding model while it remains loaded.",
+            "description": "Search the indexed Obsidian vault. Hybrid and vector searches reuse a warm local embedding model and cached stored embeddings while loaded.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -425,6 +500,29 @@ fn tools() -> Value {
                             { "type": "string" },
                             { "type": "array", "items": { "type": "string", "description": "KEY=VALUE, KEY!=VALUE, KEY>=VALUE, KEY<=VALUE, KEY>VALUE, or KEY<VALUE" } }
                         ]
+                    }
+                }
+            }
+        },
+        {
+            "name": "related",
+            "description": "Find notes semantically related to an indexed note or draft text.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "note": {
+                        "type": "string",
+                        "description": "Indexed note identifier, path, title, or alias."
+                    },
+                    "text": {
+                        "type": "string",
+                        "description": "Draft text that is not indexed yet."
+                    },
+                    "top": { "type": "integer", "minimum": 0 },
+                    "candidates": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Vector chunk candidates to score before note aggregation; 0 uses the configured default."
                     }
                 }
             }
@@ -481,7 +579,7 @@ fn tools() -> Value {
         },
         {
             "name": "warmup",
-            "description": "Initialize and keep the local embedding model warm for subsequent vector searches.",
+            "description": "Initialize and keep the local embedding model and stored embeddings warm for subsequent vector searches.",
             "inputSchema": { "type": "object", "properties": {} }
         },
         {
@@ -613,6 +711,7 @@ mod tests {
         let tools = tools();
 
         assert!(has_tool(&tools, "search"));
+        assert!(has_tool(&tools, "related"));
         assert!(has_tool(&tools, "tags"));
         assert!(has_tool(&tools, "properties"));
 
@@ -622,6 +721,12 @@ mod tests {
         assert!(search_args.get("tag").is_some());
         assert!(search_args.get("properties").is_some());
         assert!(search_args.get("property").is_some());
+
+        let related = tool_named(&tools, "related");
+        let related_args = &related["inputSchema"]["properties"];
+        assert!(related_args.get("note").is_some());
+        assert!(related_args.get("text").is_some());
+        assert!(related_args.get("candidates").is_some());
     }
 
     #[test]
@@ -662,6 +767,65 @@ mod tests {
             }),
         );
         assert_eq!(hits[0]["path"], "beta.md");
+    }
+
+    #[test]
+    fn related_tool_returns_similar_notes() {
+        let (_temp, config) = indexed_test_config();
+        let paths = KbPaths::from_config(&config);
+        let db = Db::open(&paths.db_path).unwrap();
+        seed_test_embeddings(&db);
+        let mut config = config;
+        config.embeddings.enabled = true;
+        let mut server = McpServer::new(config);
+
+        let report = call_tool_json(
+            &mut server,
+            "related",
+            json!({
+                "note": "alpha.md",
+                "top": 1
+            }),
+        );
+
+        assert_eq!(report["source"]["kind"], "note");
+        assert_eq!(report["source"]["path"], "alpha.md");
+        assert_eq!(report["notes"][0]["path"], "beta.md");
+    }
+
+    #[test]
+    fn related_tool_reuses_cached_embeddings_between_calls() {
+        let (_temp, config) = indexed_test_config();
+        let paths = KbPaths::from_config(&config);
+        let db = Db::open(&paths.db_path).unwrap();
+        seed_test_embeddings(&db);
+        let mut config = config;
+        config.embeddings.enabled = true;
+        config.benchmark.enabled = true;
+        let log_path = config.benchmark_log_path();
+        let mut server = McpServer::new(config);
+
+        for _ in 0..2 {
+            let report = call_tool_json(
+                &mut server,
+                "related",
+                json!({
+                    "note": "alpha.md",
+                    "top": 1
+                }),
+            );
+            assert_eq!(report["notes"][0]["path"], "beta.md");
+        }
+
+        let content = std::fs::read_to_string(log_path).unwrap();
+        let records = content
+            .lines()
+            .map(|line| serde_json::from_str::<Value>(line).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0]["vector_embeddings_cached"], false);
+        assert_eq!(records[1]["vector_embeddings_cached"], true);
+        assert_eq!(records[1]["phases"]["vector_load_embeddings_ms"], 0.0);
     }
 
     fn has_tool(tools: &Value, name: &str) -> bool {
@@ -734,5 +898,24 @@ Beta planning note.
             .unwrap();
 
         (temp, config)
+    }
+
+    fn seed_test_embeddings(db: &Db) {
+        let chunks = db.load_all_chunks().unwrap();
+        for chunk in chunks {
+            let vector = if chunk.note_path == "alpha.md" {
+                [1.0, 0.0, 0.0]
+            } else {
+                [0.97, 0.03, 0.0]
+            };
+            db.insert_embedding(
+                &chunk.chunk_id,
+                "fastembed:MultilingualE5Small",
+                3,
+                &crate::embeddings::encode_vector(&vector),
+                &chunk.text_hash,
+            )
+            .unwrap();
+        }
     }
 }
