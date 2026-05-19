@@ -239,11 +239,18 @@ Optional benchmark logging can be enabled in `.obsidian-kb.toml` with
 unless `include_query = true`.
 
 For MCP clients, `obsidian-kb mcp` runs a local stdio server with search, show,
-tags, properties, stats, warmup, unload, and status tools. The MCP `search` tool
+graph, tags, properties, stats, warmup, unload, and status tools. The MCP `search` tool
 accepts `tags` and `properties` arrays, plus `tag` and `property` aliases for
 single filters. Hybrid and vector searches keep the local embedding model warm
 between requests, then unload it automatically after the configured idle
 timeout.
+
+For local HTTP clients, `obsidian-kb serve` binds to `127.0.0.1:27124` by
+default and prints the chosen URL. Use `--port` to override the port. It exposes
+`GET /health`, `GET /status`, `POST /search`, `POST /show`, `POST /graph`,
+`POST /index/refresh`, `POST /shutdown`, and `POST /mcp`. The `/mcp` endpoint
+accepts MCP JSON-RPC over streamable HTTP and can return either JSON or
+`text/event-stream` responses.
 
 ## What It Is Not
 

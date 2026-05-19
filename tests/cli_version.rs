@@ -20,5 +20,6 @@ fn help_lists_mcp_command() {
         .arg("--help")
         .assert()
         .success()
-        .stdout(predicate::str::contains("mcp"));
+        .stdout(predicate::str::contains("mcp"))
+        .stdout(predicate::str::contains("serve"));
 }

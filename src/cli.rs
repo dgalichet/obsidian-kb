@@ -1,6 +1,8 @@
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
+pub const DEFAULT_SERVE_PORT: u16 = 27124;
+
 #[derive(Debug, Parser)]
 #[command(name = "obsidian-kb")]
 #[command(about = "Local-first hybrid retrieval for Obsidian vaults")]
@@ -24,6 +26,7 @@ pub enum Command {
     Properties(PropertiesArgs),
     Doctor(DoctorArgs),
     Mcp(McpArgs),
+    Serve(ServeArgs),
     #[command(about = "Print version information")]
     Version,
 }
@@ -205,6 +208,32 @@ pub struct McpArgs {
     #[arg(
         long,
         help = "Initialize the local embedding model when the MCP server starts"
+    )]
+    pub preload_embedder: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct ServeArgs {
+    #[arg(long, help = "Path to the Obsidian vault")]
+    pub vault: Option<PathBuf>,
+
+    #[arg(
+        long,
+        default_value_t = DEFAULT_SERVE_PORT,
+        help = "HTTP bind port on 127.0.0.1"
+    )]
+    pub port: u16,
+
+    #[arg(
+        long,
+        value_name = "SECONDS",
+        help = "Override the vector model idle unload timeout; 0 disables auto-unload"
+    )]
+    pub idle_unload_seconds: Option<u64>,
+
+    #[arg(
+        long,
+        help = "Initialize the local embedding model when the HTTP server starts"
     )]
     pub preload_embedder: bool,
 }
