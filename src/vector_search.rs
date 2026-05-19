@@ -70,7 +70,18 @@ pub fn search(
 pub struct VectorSearchCache {
     embedder: Option<FastEmbedder>,
     model_key: Option<String>,
+    embeddings: Option<EmbeddingCache>,
     last_used: Option<Instant>,
+}
+
+struct EmbeddingCache {
+    model_key: String,
+    embeddings: Vec<CachedEmbedding>,
+}
+
+struct CachedEmbedding {
+    chunk_id: String,
+    vector: Vec<f32>,
 }
 
 impl VectorSearchCache {
@@ -85,11 +96,12 @@ impl VectorSearchCache {
         Ok(())
     }
 
-    /// Drops the cached embedding model and releases its memory.
+    /// Drops the cached embedding model and stored embeddings, releasing memory.
     pub fn unload(&mut self) -> bool {
-        let was_loaded = self.embedder.is_some();
+        let was_loaded = self.embedder.is_some() || self.embeddings.is_some();
         self.embedder = None;
         self.model_key = None;
+        self.embeddings = None;
         self.last_used = None;
         was_loaded
     }
@@ -112,6 +124,30 @@ impl VectorSearchCache {
     /// Returns whether the embedding model is currently loaded in memory.
     pub fn is_loaded(&self) -> bool {
         self.embedder.is_some()
+    }
+
+    /// Returns whether stored embeddings are currently cached in memory.
+    pub fn embeddings_loaded(&self) -> bool {
+        self.embeddings.is_some()
+    }
+
+    /// Returns the number of stored embeddings currently cached in memory.
+    pub fn cached_embedding_count(&self) -> usize {
+        self.embeddings
+            .as_ref()
+            .map(|cache| cache.embeddings.len())
+            .unwrap_or_default()
+    }
+
+    /// Loads stored embeddings for the configured model into memory.
+    pub fn warm_up_embeddings(&mut self, db: &Db, config: &AppConfig) -> Result<()> {
+        let model_key = self
+            .model_key
+            .clone()
+            .unwrap_or_else(|| config.embedding_model_key());
+        self.cached_embeddings_with_benchmark(db, &model_key, None)?;
+        self.last_used = Some(Instant::now());
+        Ok(())
     }
 
     /// Runs vector search using the cached model when available.
@@ -153,23 +189,14 @@ impl VectorSearchCache {
                     embedder.embed_query(&query)
                 })?
             };
-            let embeddings =
-                benchmark::time_phase(&mut benchmark, "vector_load_embeddings_ms", || {
-                    db.load_embeddings(&model_key)
-                })?;
-            if let Some(benchmark) = benchmark.as_deref_mut() {
-                benchmark.set_field("vector_dimensions", query_vector.len());
-                benchmark.set_field("vector_embedding_count", embeddings.len());
-            }
-            let candidates =
-                benchmark::time_phase(&mut benchmark, "vector_score_embeddings_ms", || {
-                    score_embeddings(
-                        &query_vector,
-                        embeddings,
-                        config.embedding_min_cosine(),
-                        limit,
-                    )
-                });
+            let candidates = self.search_vector_with_benchmark(
+                db,
+                config,
+                &model_key,
+                &query_vector,
+                limit,
+                benchmark.as_deref_mut(),
+            )?;
             self.last_used = Some(Instant::now());
             Ok(candidates)
         })();
@@ -177,6 +204,76 @@ impl VectorSearchCache {
             benchmark.record_phase("vector_ms", started.elapsed());
         }
         result
+    }
+
+    /// Scores a prepared query vector using cached stored embeddings when available.
+    pub fn search_vector_with_benchmark(
+        &mut self,
+        db: &Db,
+        config: &AppConfig,
+        model_key: &str,
+        query_vector: &[f32],
+        limit: usize,
+        mut benchmark: Option<&mut BenchmarkRun>,
+    ) -> Result<Vec<SearchCandidate>> {
+        let embeddings =
+            self.cached_embeddings_with_benchmark(db, model_key, benchmark.as_deref_mut())?;
+        if let Some(benchmark) = benchmark.as_deref_mut() {
+            benchmark.set_field("vector_dimensions", query_vector.len());
+            benchmark.set_field("vector_embedding_count", embeddings.len());
+        }
+        let candidates =
+            benchmark::time_phase(&mut benchmark, "vector_score_embeddings_ms", || {
+                score_cached_embeddings(
+                    query_vector,
+                    embeddings,
+                    config.embedding_min_cosine(),
+                    limit,
+                )
+            });
+        self.last_used = Some(Instant::now());
+        Ok(candidates)
+    }
+
+    fn cached_embeddings_with_benchmark(
+        &mut self,
+        db: &Db,
+        model_key: &str,
+        mut benchmark: Option<&mut BenchmarkRun>,
+    ) -> Result<&[CachedEmbedding]> {
+        let cache_hit = self
+            .embeddings
+            .as_ref()
+            .map(|cache| cache.model_key == model_key)
+            .unwrap_or(false);
+        if cache_hit {
+            if let Some(benchmark) = benchmark.as_deref_mut() {
+                benchmark.record_phase("vector_load_embeddings_ms", Duration::ZERO);
+                benchmark.record_phase("vector_decode_embeddings_ms", Duration::ZERO);
+                benchmark.set_field("vector_embeddings_cached", true);
+            }
+        } else {
+            let rows = benchmark::time_phase(&mut benchmark, "vector_load_embeddings_ms", || {
+                db.load_embeddings(model_key)
+            })?;
+            let embeddings =
+                benchmark::time_phase(&mut benchmark, "vector_decode_embeddings_ms", || {
+                    decode_cached_embeddings(rows)
+                });
+            self.embeddings = Some(EmbeddingCache {
+                model_key: model_key.to_string(),
+                embeddings,
+            });
+            if let Some(benchmark) = benchmark {
+                benchmark.set_field("vector_embeddings_cached", false);
+            }
+        }
+
+        Ok(&self
+            .embeddings
+            .as_ref()
+            .expect("embedding cache is initialized")
+            .embeddings)
     }
 }
 
@@ -189,6 +286,37 @@ pub fn search_with_benchmark(
     benchmark: Option<&mut BenchmarkRun>,
 ) -> Result<Vec<SearchCandidate>> {
     VectorSearchCache::default().search_with_benchmark(db, config, query, limit, benchmark)
+}
+
+/// Scores a prepared query vector against all stored embeddings for `model_key`.
+pub fn search_vector_with_benchmark(
+    db: &Db,
+    config: &AppConfig,
+    model_key: &str,
+    query_vector: &[f32],
+    limit: usize,
+    mut benchmark: Option<&mut BenchmarkRun>,
+) -> Result<Vec<SearchCandidate>> {
+    let embeddings = benchmark::time_phase(&mut benchmark, "vector_load_embeddings_ms", || {
+        db.load_embeddings(model_key)
+    })?;
+    if let Some(benchmark) = benchmark.as_deref_mut() {
+        benchmark.set_field("vector_dimensions", query_vector.len());
+        benchmark.set_field("vector_embedding_count", embeddings.len());
+        benchmark.set_field("vector_embeddings_cached", false);
+    }
+    Ok(benchmark::time_phase(
+        &mut benchmark,
+        "vector_score_embeddings_ms",
+        || {
+            score_embeddings(
+                query_vector,
+                embeddings,
+                config.embedding_min_cosine(),
+                limit,
+            )
+        },
+    ))
 }
 
 pub fn score_embeddings(
@@ -206,6 +334,45 @@ pub fn score_embeddings(
             let vector = decode_vector(&bytes);
             let score = cosine(query_vector, &vector);
             (score >= min_cosine).then_some(SearchCandidate { chunk_id, score })
+        })
+        .collect::<Vec<_>>();
+    candidates.sort_by(|left, right| {
+        right
+            .score
+            .total_cmp(&left.score)
+            .then_with(|| left.chunk_id.cmp(&right.chunk_id))
+    });
+    candidates.truncate(limit);
+    candidates
+}
+
+fn decode_cached_embeddings(rows: Vec<(String, usize, Vec<u8>)>) -> Vec<CachedEmbedding> {
+    rows.into_iter()
+        .filter_map(|(chunk_id, dim, bytes)| {
+            let vector = decode_vector(&bytes);
+            (dim == vector.len() && !vector.is_empty())
+                .then_some(CachedEmbedding { chunk_id, vector })
+        })
+        .collect()
+}
+
+fn score_cached_embeddings(
+    query_vector: &[f32],
+    embeddings: &[CachedEmbedding],
+    min_cosine: f32,
+    limit: usize,
+) -> Vec<SearchCandidate> {
+    let mut candidates = embeddings
+        .par_iter()
+        .filter_map(|embedding| {
+            if embedding.vector.len() != query_vector.len() {
+                return None;
+            }
+            let score = cosine(query_vector, &embedding.vector);
+            (score >= min_cosine).then_some(SearchCandidate {
+                chunk_id: embedding.chunk_id.clone(),
+                score,
+            })
         })
         .collect::<Vec<_>>();
     candidates.sort_by(|left, right| {

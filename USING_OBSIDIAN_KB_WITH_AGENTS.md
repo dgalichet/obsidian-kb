@@ -242,13 +242,14 @@ obsidian-kb mcp
 MCP mode exposes these tools:
 
 - `search`: run BM25, vector, or hybrid search with the same options as the CLI;
+- `related`: find notes semantically related to an indexed note or draft text;
 - `show`: read one selected chunk by ID;
 - `graph`: inspect direct wikilinks and backlinks around one indexed note;
 - `tags`: list indexed tags, optionally filtered by prefix;
 - `properties`: list indexed frontmatter property keys, or values for one key;
 - `stats`: inspect indexed vault statistics;
-- `warmup`: load the local embedding model and embeddings into memory;
-- `unload`: drop the warm embedding cache when it is no longer needed;
+- `warmup`: load the local embedding model and stored embeddings into memory;
+- `unload`: drop the warm model and embedding cache when it is no longer needed;
 - `status`: inspect whether the warm cache is loaded.
 
 For local HTTP clients, `obsidian-kb serve` exposes the same retrieval surface

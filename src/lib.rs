@@ -19,6 +19,7 @@ pub mod normalization;
 pub mod output;
 pub mod paths;
 pub mod properties;
+pub mod related;
 pub mod schema;
 pub mod scoring;
 pub mod search;
@@ -32,6 +33,7 @@ use anyhow::{Context, Result, bail};
 use clap::Parser;
 use cli::{Cli, Command};
 use models::{SearchFilters, SearchMode};
+use std::io::Read;
 
 pub fn run() -> Result<()> {
     tracing_subscriber::fmt()
@@ -149,6 +151,56 @@ pub fn run() -> Result<()> {
                             output::print_json(&hits)?;
                         } else {
                             output::print_search_table(&hits);
+                        }
+                        Ok(())
+                    })?;
+                    Ok(())
+                },
+            )?;
+        }
+        Command::Related(args) => {
+            let config = config::load_existing(args.vault.as_deref(), global_config.as_deref())?;
+            let input = related_input(&args)?;
+            benchmark::measure(
+                &config,
+                "related",
+                |benchmark| {
+                    benchmark.set_field("top", args.top);
+                    benchmark.set_field("candidates", args.candidates);
+                    benchmark.set_field("json", args.json);
+                    match &input {
+                        related::RelatedInput::Note(identifier) => {
+                            benchmark.set_field("source_kind", "note");
+                            benchmark
+                                .set_field("source_identifier_chars", identifier.chars().count());
+                            if config.benchmark.include_query {
+                                benchmark.set_field("source_identifier", identifier);
+                            }
+                        }
+                        related::RelatedInput::Text(text) => {
+                            benchmark.set_field("source_kind", "text");
+                            benchmark.set_field("source_text_chars", text.chars().count());
+                            if config.benchmark.include_query {
+                                benchmark.set_field("source_text", text);
+                            }
+                        }
+                    }
+                },
+                |mut benchmark| {
+                    let report = related::find_related_with_benchmark(
+                        &config,
+                        input.clone(),
+                        related::RelatedOptions {
+                            limit: args.top,
+                            candidates: args.candidates,
+                        },
+                        benchmark.as_deref_mut(),
+                    )?;
+                    benchmark::time_phase(&mut benchmark, "output_ms", || -> Result<()> {
+                        if args.json {
+                            output::print_json(&report)?;
+                        } else {
+                            output::print_related_table(&report);
                         }
                         Ok(())
                     })?;
@@ -353,6 +405,26 @@ pub fn run() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn related_input(args: &cli::RelatedArgs) -> Result<related::RelatedInput> {
+    let note = args.note.join(" ");
+    let has_note = !note.trim().is_empty();
+    let source_count = if has_note { 1 } else { 0 }
+        + if args.text.is_some() { 1 } else { 0 }
+        + if args.stdin { 1 } else { 0 };
+    if source_count != 1 {
+        bail!("related requires exactly one source: NOTE, --text, or --stdin");
+    }
+    if let Some(text) = args.text.as_ref() {
+        return Ok(related::RelatedInput::Text(text.clone()));
+    }
+    if args.stdin {
+        let mut text = String::new();
+        std::io::stdin().read_to_string(&mut text)?;
+        return Ok(related::RelatedInput::Text(text));
+    }
+    Ok(related::RelatedInput::Note(note))
 }
 
 fn search_mode_name(mode: SearchMode) -> &'static str {

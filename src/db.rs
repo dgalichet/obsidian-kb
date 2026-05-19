@@ -733,6 +733,30 @@ impl Db {
             .map_err(Into::into)
     }
 
+    pub fn load_note_embeddings(
+        &self,
+        path: &str,
+        model: &str,
+    ) -> Result<Vec<(String, usize, Vec<u8>)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT c.id, e.dim, e.embedding
+             FROM embeddings e
+             JOIN chunks c ON c.id = e.chunk_id
+             JOIN files f ON f.id = c.file_id
+             WHERE f.rel_path = ?1 AND e.model = ?2
+             ORDER BY c.chunk_index",
+        )?;
+        let rows = stmt.query_map(params![path, model], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, i64>(1)? as usize,
+                row.get::<_, Vec<u8>>(2)?,
+            ))
+        })?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(Into::into)
+    }
+
     pub fn load_embedding_hashes(&self, model: &str) -> Result<BTreeMap<String, String>> {
         let mut stmt = self.conn.prepare(
             "SELECT chunk_id, content_hash

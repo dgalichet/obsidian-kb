@@ -51,7 +51,11 @@ pub fn run(mut config: AppConfig, args: ServeArgs) -> Result<()> {
                 stream.set_write_timeout(Some(Duration::from_secs(30))).ok();
                 let response = handle_connection(&mut server, &mut stream);
                 shutdown = response.shutdown;
-                write_http_response(&mut stream, response)?;
+                if let Err(error) = write_http_response(&mut stream, response)
+                    && !is_client_disconnect(&error)
+                {
+                    return Err(error);
+                }
             }
             Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
                 std::thread::sleep(IDLE_CHECK_INTERVAL);
@@ -147,6 +151,7 @@ fn route_index_refresh(server: &mut McpServer, request: &HttpRequest) -> HttpRes
     );
     match result {
         Ok(outcome) => {
+            server.unload_vector_cache();
             HttpResponse::json(200, serde_json::to_value(outcome).unwrap_or(Value::Null))
         }
         Err(error) => HttpResponse::json_error(500, error.to_string()),
@@ -398,6 +403,20 @@ fn write_http_response(stream: &mut TcpStream, response: HttpResponse) -> Result
     Ok(())
 }
 
+fn is_client_disconnect(error: &anyhow::Error) -> bool {
+    error
+        .downcast_ref::<std::io::Error>()
+        .map(|error| {
+            matches!(
+                error.kind(),
+                std::io::ErrorKind::BrokenPipe
+                    | std::io::ErrorKind::ConnectionReset
+                    | std::io::ErrorKind::ConnectionAborted
+            )
+        })
+        .unwrap_or(false)
+}
+
 fn reason_phrase(status: u16) -> &'static str {
     match status {
         200 => "OK",
@@ -505,6 +524,19 @@ mod tests {
                 .unwrap()
                 .starts_with("event: message\n")
         );
+    }
+
+    #[test]
+    fn client_disconnect_write_errors_do_not_stop_server() {
+        assert!(is_client_disconnect(
+            &std::io::Error::from(std::io::ErrorKind::BrokenPipe).into()
+        ));
+        assert!(is_client_disconnect(
+            &std::io::Error::from(std::io::ErrorKind::ConnectionReset).into()
+        ));
+        assert!(!is_client_disconnect(
+            &std::io::Error::from(std::io::ErrorKind::PermissionDenied).into()
+        ));
     }
 
     fn request(method: &str, target: &str, body: Option<Value>) -> HttpRequest {
