@@ -1,11 +1,13 @@
 use anyhow::{Result, bail};
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::benchmark::{self, BenchmarkRun};
 use crate::config::AppConfig;
 use crate::db::Db;
 use crate::error::KbError;
-use crate::models::{PropertyFilter, PropertyOperator, SearchFilters, SearchHit, SearchMode};
+use crate::models::{
+    PropertyFilter, PropertyOperator, SearchFilters, SearchHit, SearchMatchedChunk, SearchMode,
+};
 use crate::paths::KbPaths;
 use crate::scoring::{FusedCandidate, reciprocal_rank_fusion};
 use crate::{properties, tantivy_index, vector_search};
@@ -185,43 +187,102 @@ pub fn search_with_vector_cache(
     });
 
     benchmark::time_phase(&mut benchmark, "hydrate_results_ms", || {
-        let mut hits = Vec::new();
         let final_limit = if options.limit == 0 {
             config.search.final_top_k
         } else {
             options.limit
         };
-        for (index, candidate) in fused.into_iter().take(final_limit).enumerate() {
-            if let Some(chunk) = db.load_chunk(&candidate.chunk_id)? {
-                hits.push(SearchHit {
-                    final_rank: index + 1,
-                    final_score: candidate.score,
-                    path: chunk.note_path,
-                    title: chunk.title,
-                    chunk_id: chunk.chunk_id,
-                    heading_path: chunk.heading_path.clone(),
-                    heading: chunk.heading_path,
-                    start_line: chunk.start_line,
-                    end_line: chunk.end_line,
-                    tags: chunk.tags,
-                    snippet: make_snippet(&chunk.text, 240),
-                    text: options
-                        .include_text
-                        .then(|| limit_text(&chunk.text, options.max_chars)),
-                    bm25_rank: candidate.lexical_rank,
-                    bm25_score: candidate.lexical_score,
-                    vector_rank: candidate.vector_rank,
-                    vector_score: candidate.vector_score,
-                    graph_boost: candidate.graph_boost,
-                    score: candidate.score,
-                    source: candidate.source,
-                    lexical_rank: candidate.lexical_rank,
-                    graph: candidate.graph,
-                });
-            }
+        let mut hits = aggregate_note_hits(&db, fused, options.include_text, options.max_chars)?;
+        hits.truncate(final_limit);
+        for (index, hit) in hits.iter_mut().enumerate() {
+            hit.final_rank = index + 1;
         }
         Ok(hits)
     })
+}
+
+fn aggregate_note_hits(
+    db: &Db,
+    candidates: Vec<FusedCandidate>,
+    include_text: bool,
+    max_chars: usize,
+) -> Result<Vec<SearchHit>> {
+    let mut notes = BTreeMap::<String, NoteAccumulator>::new();
+    for candidate in candidates {
+        let Some(chunk) = db.load_chunk(&candidate.chunk_id)? else {
+            continue;
+        };
+        let entry = notes
+            .entry(chunk.note_path.clone())
+            .or_insert_with(|| NoteAccumulator {
+                path: chunk.note_path.clone(),
+                title: chunk.title.clone(),
+                tags: chunk.tags.clone(),
+                chunks: Vec::new(),
+            });
+        entry.chunks.push(SearchMatchedChunk {
+            chunk_id: chunk.chunk_id,
+            score: candidate.score,
+            heading_path: chunk.heading_path.clone(),
+            heading: chunk.heading_path,
+            start_line: chunk.start_line,
+            end_line: chunk.end_line,
+            snippet: make_snippet(&chunk.text, 240),
+            text: include_text.then(|| limit_text(&chunk.text, max_chars)),
+            bm25_rank: candidate.lexical_rank,
+            bm25_score: candidate.lexical_score,
+            vector_rank: candidate.vector_rank,
+            vector_score: candidate.vector_score,
+            graph_boost: candidate.graph_boost,
+            source: candidate.source,
+            lexical_rank: candidate.lexical_rank,
+            graph: candidate.graph,
+        });
+    }
+
+    let mut hits = notes
+        .into_values()
+        .filter_map(|mut note| {
+            note.chunks.sort_by(|left, right| {
+                right
+                    .score
+                    .total_cmp(&left.score)
+                    .then_with(|| left.chunk_id.cmp(&right.chunk_id))
+            });
+            let best = note.chunks.first()?;
+            Some(SearchHit {
+                final_rank: 0,
+                final_score: best.score,
+                path: note.path,
+                title: note.title,
+                tags: note.tags,
+                best_chunk_id: best.chunk_id.clone(),
+                best_heading: best.heading_path.clone(),
+                best_start_line: best.start_line,
+                best_end_line: best.end_line,
+                best_snippet: best.snippet.clone(),
+                matched_chunks: note.chunks.len(),
+                text: best.text.clone(),
+                bm25_rank: best.bm25_rank,
+                bm25_score: best.bm25_score,
+                vector_rank: best.vector_rank,
+                vector_score: best.vector_score,
+                graph_boost: best.graph_boost,
+                score: best.score,
+                source: best.source.clone(),
+                lexical_rank: best.lexical_rank,
+                graph: best.graph,
+                chunks: note.chunks,
+            })
+        })
+        .collect::<Vec<_>>();
+    hits.sort_by(|left, right| {
+        right
+            .final_score
+            .total_cmp(&left.final_score)
+            .then_with(|| left.path.cmp(&right.path))
+    });
+    Ok(hits)
 }
 
 fn filter_only_candidates(
@@ -378,4 +439,11 @@ fn limit_text(text: &str, max_chars: usize) -> String {
     let mut limited = text.chars().take(max_chars).collect::<String>();
     limited.push_str("...");
     limited
+}
+
+struct NoteAccumulator {
+    path: String,
+    title: String,
+    tags: Vec<String>,
+    chunks: Vec<SearchMatchedChunk>,
 }

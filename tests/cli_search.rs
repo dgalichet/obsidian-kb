@@ -167,10 +167,14 @@ fn search_json_includes_explainability_fields_and_sanitizes_queries() {
     assert!(hits[0]["final_score"].as_f64().unwrap() > 0.0);
     assert!(hits[0]["bm25_rank"].as_u64().unwrap() >= 1);
     assert!(hits[0]["bm25_score"].as_f64().unwrap() > 0.0);
-    assert!(hits[0]["heading_path"].is_string());
-    assert!(hits[0]["chunk_id"].is_string());
-    assert!(hits[0]["start_line"].as_u64().unwrap() >= 1);
-    assert!(hits[0]["end_line"].as_u64().unwrap() >= hits[0]["start_line"].as_u64().unwrap());
+    assert!(hits[0]["best_heading"].is_string());
+    assert!(hits[0]["best_chunk_id"].is_string());
+    assert!(hits[0]["best_start_line"].as_u64().unwrap() >= 1);
+    assert!(
+        hits[0]["best_end_line"].as_u64().unwrap() >= hits[0]["best_start_line"].as_u64().unwrap()
+    );
+    assert!(hits[0]["matched_chunks"].as_u64().unwrap() >= 1);
+    assert!(hits[0]["chunks"].as_array().unwrap()[0]["chunk_id"].is_string());
     assert!(
         hits[0]["tags"]
             .as_array()
@@ -179,6 +183,71 @@ fn search_json_includes_explainability_fields_and_sanitizes_queries() {
             .all(|tag| tag.is_string())
     );
     assert!(hits[0].get("text").is_none());
+}
+
+#[test]
+fn search_aggregates_multiple_matching_chunks_by_note() {
+    let (_temp, vault) = common::temp_vault();
+    let repeated = (0..8)
+        .map(|index| {
+            format!(
+                "dedupechunk paragraph {index}. {}\n",
+                "This sentence repeats the search marker while adding enough filler text to force the note into multiple independently searchable chunks. ".repeat(12)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    std::fs::write(
+        vault.join("multi-dedupe.md"),
+        format!("# Multi Dedupe\n\n{repeated}"),
+    )
+    .unwrap();
+    std::fs::write(
+        vault.join("single-dedupe.md"),
+        "# Single Dedupe\n\ndedupechunk appears once in this shorter note.\n",
+    )
+    .unwrap();
+
+    Command::cargo_bin("obsidian-kb")
+        .unwrap()
+        .args([
+            "index",
+            "--vault",
+            vault.to_str().unwrap(),
+            "--no-embeddings",
+        ])
+        .assert()
+        .success();
+
+    let output = Command::cargo_bin("obsidian-kb")
+        .unwrap()
+        .args([
+            "search",
+            "--vault",
+            vault.to_str().unwrap(),
+            "--mode",
+            "bm25",
+            "--top",
+            "10",
+            "--json",
+            "dedupechunk",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let hits: Vec<SearchHit> = serde_json::from_slice(&output.stdout).unwrap();
+    let mut paths = hits.iter().map(|hit| hit.path.as_str()).collect::<Vec<_>>();
+    paths.sort_unstable();
+    paths.dedup();
+    assert_eq!(paths.len(), hits.len());
+
+    let multi = hits
+        .iter()
+        .find(|hit| hit.path == "multi-dedupe.md")
+        .unwrap();
+    assert!(multi.matched_chunks > 1);
+    assert_eq!(multi.chunks.len(), multi.matched_chunks);
 }
 
 #[test]
