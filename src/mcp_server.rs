@@ -13,7 +13,7 @@ use crate::paths::KbPaths;
 use crate::search::{self, SearchOptions};
 use crate::vector_search::VectorSearchCache;
 
-const MCP_PROTOCOL_VERSION: &str = "2024-11-05";
+pub(crate) const MCP_PROTOCOL_VERSION: &str = "2024-11-05";
 const IDLE_CHECK_INTERVAL: Duration = Duration::from_millis(500);
 
 /// Runs the obsidian-kb MCP server over stdio.
@@ -75,24 +75,32 @@ pub fn run(mut config: AppConfig, args: McpArgs) -> Result<()> {
     Ok(())
 }
 
-struct McpServer {
+pub(crate) struct McpServer {
     config: AppConfig,
     vector_cache: VectorSearchCache,
 }
 
 impl McpServer {
-    fn new(config: AppConfig) -> Self {
+    pub(crate) fn new(config: AppConfig) -> Self {
         Self {
             config,
             vector_cache: VectorSearchCache::default(),
         }
     }
 
-    fn warm_up_vector_cache(&mut self) -> Result<()> {
+    pub(crate) fn config(&self) -> &AppConfig {
+        &self.config
+    }
+
+    pub(crate) fn vector_embedder_loaded(&self) -> bool {
+        self.vector_cache.is_loaded()
+    }
+
+    pub(crate) fn warm_up_vector_cache(&mut self) -> Result<()> {
         self.vector_cache.warm_up(&self.config)
     }
 
-    fn unload_idle_vector_cache(&mut self) {
+    pub(crate) fn unload_idle_vector_cache(&mut self) {
         let seconds = self.config.mcp.idle_unload_seconds;
         if seconds == 0 {
             return;
@@ -101,7 +109,7 @@ impl McpServer {
             .unload_if_idle(Duration::from_secs(seconds));
     }
 
-    fn handle_message(&mut self, message: &str) -> Option<String> {
+    pub(crate) fn handle_message(&mut self, message: &str) -> Option<String> {
         let parsed = match serde_json::from_str::<Value>(message) {
             Ok(parsed) => parsed,
             Err(error) => {
@@ -112,15 +120,19 @@ impl McpServer {
                 ));
             }
         };
+        self.handle_value(&parsed)
+            .map(|response| response.to_string())
+    }
+
+    pub(crate) fn handle_value(&mut self, parsed: &Value) -> Option<Value> {
         if let Some(batch) = parsed.as_array() {
             let responses = batch
                 .iter()
                 .filter_map(|request| self.handle_request(request))
                 .collect::<Vec<_>>();
-            return (!responses.is_empty()).then(|| Value::Array(responses).to_string());
+            return (!responses.is_empty()).then_some(Value::Array(responses));
         }
-        self.handle_request(&parsed)
-            .map(|response| response.to_string())
+        self.handle_request(parsed)
     }
 
     fn handle_request(&mut self, request: &Value) -> Option<Value> {
@@ -190,6 +202,7 @@ impl McpServer {
         let result = match name {
             "search" => self.tool_search(&arguments),
             "show" => self.tool_show(&arguments),
+            "graph" => self.tool_graph(&arguments),
             "tags" => self.tool_tags(&arguments),
             "properties" => self.tool_properties(&arguments),
             "stats" => self.tool_stats(),
@@ -198,10 +211,7 @@ impl McpServer {
                 "unloaded": self.vector_cache.unload(),
                 "vector_embedder_loaded": self.vector_cache.is_loaded()
             })),
-            "status" => Ok(json!({
-                "vector_embedder_loaded": self.vector_cache.is_loaded(),
-                "idle_unload_seconds": self.config.mcp.idle_unload_seconds
-            })),
+            "status" => Ok(self.tool_status()),
             _ => Err(anyhow!("unknown tool `{name}`")),
         };
         match result {
@@ -216,7 +226,7 @@ impl McpServer {
         }
     }
 
-    fn tool_search(&mut self, arguments: &Value) -> Result<Value> {
+    pub(crate) fn tool_search(&mut self, arguments: &Value) -> Result<Value> {
         let query = optional_string_arg(arguments, "query").unwrap_or("");
         let mode = optional_string_arg(arguments, "mode")
             .and_then(SearchMode::from_config_value)
@@ -275,7 +285,7 @@ impl McpServer {
         serde_json::to_value(hits).map_err(Into::into)
     }
 
-    fn tool_show(&self, arguments: &Value) -> Result<Value> {
+    pub(crate) fn tool_show(&self, arguments: &Value) -> Result<Value> {
         let chunk_id = string_arg(arguments, "chunk_id")?;
         let paths = KbPaths::from_config(&self.config);
         let db = Db::open(&paths.db_path)?;
@@ -285,7 +295,18 @@ impl McpServer {
         serde_json::to_value(chunk).map_err(Into::into)
     }
 
-    fn tool_tags(&self, arguments: &Value) -> Result<Value> {
+    pub(crate) fn tool_graph(&self, arguments: &Value) -> Result<Value> {
+        let note = string_arg(arguments, "note")?;
+        let depth = usize_arg(arguments, "depth", 1)?;
+        let paths = KbPaths::from_config(&self.config);
+        let db = Db::open(&paths.db_path)?;
+        let view = db
+            .graph_view(note, depth)?
+            .with_context(|| format!("note not found: {note}"))?;
+        serde_json::to_value(view).map_err(Into::into)
+    }
+
+    pub(crate) fn tool_tags(&self, arguments: &Value) -> Result<Value> {
         let prefix = optional_string_arg(arguments, "prefix");
         let top = usize_arg(arguments, "top", 50)?;
         let paths = KbPaths::from_config(&self.config);
@@ -293,7 +314,7 @@ impl McpServer {
         serde_json::to_value(db.tag_facets(prefix, top)?).map_err(Into::into)
     }
 
-    fn tool_properties(&self, arguments: &Value) -> Result<Value> {
+    pub(crate) fn tool_properties(&self, arguments: &Value) -> Result<Value> {
         let key = optional_string_arg(arguments, "key");
         let top = usize_arg(arguments, "top", 50)?;
         let paths = KbPaths::from_config(&self.config);
@@ -301,17 +322,24 @@ impl McpServer {
         serde_json::to_value(db.property_facets(key, top)?).map_err(Into::into)
     }
 
-    fn tool_stats(&self) -> Result<Value> {
+    pub(crate) fn tool_stats(&self) -> Result<Value> {
         let paths = KbPaths::from_config(&self.config);
         let db = Db::open(&paths.db_path)?;
         serde_json::to_value(db.stats()?).map_err(Into::into)
     }
 
-    fn tool_warmup(&mut self) -> Result<Value> {
+    pub(crate) fn tool_warmup(&mut self) -> Result<Value> {
         self.vector_cache.warm_up(&self.config)?;
         Ok(json!({
             "vector_embedder_loaded": self.vector_cache.is_loaded()
         }))
+    }
+
+    pub(crate) fn tool_status(&self) -> Value {
+        json!({
+            "vector_embedder_loaded": self.vector_embedder_loaded(),
+            "idle_unload_seconds": self.config.mcp.idle_unload_seconds
+        })
     }
 }
 
@@ -410,6 +438,18 @@ fn tools() -> Value {
                     "chunk_id": { "type": "string" }
                 },
                 "required": ["chunk_id"]
+            }
+        },
+        {
+            "name": "graph",
+            "description": "Return direct graph context around one indexed note.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "note": { "type": "string" },
+                    "depth": { "type": "integer", "minimum": 0 }
+                },
+                "required": ["note"]
             }
         },
         {

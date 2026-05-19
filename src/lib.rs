@@ -11,6 +11,7 @@ pub mod embeddings;
 pub mod error;
 pub mod frontmatter;
 pub mod graph;
+pub mod indexer;
 pub mod markdown;
 pub mod mcp_server;
 pub mod models;
@@ -21,6 +22,7 @@ pub mod properties;
 pub mod schema;
 pub mod scoring;
 pub mod search;
+pub mod serve;
 pub mod tantivy_index;
 pub mod vault;
 pub mod vector_search;
@@ -29,9 +31,7 @@ pub mod version;
 use anyhow::{Context, Result, bail};
 use clap::Parser;
 use cli::{Cli, Command};
-use db::FileSnapshot;
 use models::{SearchFilters, SearchMode};
-use std::collections::{BTreeMap, BTreeSet};
 
 pub fn run() -> Result<()> {
     tracing_subscriber::fmt()
@@ -73,59 +73,25 @@ pub fn run() -> Result<()> {
                     benchmark.set_field("no_embeddings", args.no_embeddings);
                 },
                 |mut benchmark| {
-                    let mut parsed =
-                        benchmark::time_phase(&mut benchmark, "load_vault_ms", || {
-                            vault::load_vault(&config)
-                        })?;
-                    let graph_report =
-                        benchmark::time_phase(&mut benchmark, "resolve_graph_ms", || {
-                            graph::resolve_links(&mut parsed)
-                        });
-                    let paths = paths::KbPaths::from_config(&config);
-                    if args.rebuild {
-                        benchmark::time_phase(&mut benchmark, "reset_indexes_ms", || {
-                            reset_local_indexes(&paths)
-                        })?;
-                    }
                     if args.changed_only {
                         eprintln!(
                             "warning: --changed-only is deprecated; use `obsidian-kb index`. Regular indexing refreshes SQLite/Tantivy and reuses unchanged embeddings."
                         );
                     }
-                    let mut db = benchmark::time_phase(&mut benchmark, "open_db_ms", || {
-                        db::Db::open(&paths.db_path)
-                    })?;
-                    let previous_files =
-                        benchmark::time_phase(&mut benchmark, "file_snapshots_ms", || {
-                            db.file_snapshots()
-                        })?;
-                    let mut stats =
-                        benchmark::time_phase(&mut benchmark, "sqlite_replace_ms", || {
-                            db.replace_index(&parsed, &graph_report.warnings)
-                        })?;
-                    apply_change_stats(&mut stats, &previous_files, &parsed);
-                    let chunks = benchmark::time_phase(&mut benchmark, "load_chunks_ms", || {
-                        db.load_all_chunks()
-                    })?;
-                    benchmark::time_phase(&mut benchmark, "tantivy_rebuild_ms", || {
-                        tantivy_index::rebuild(
-                            &paths.tantivy_dir,
-                            &chunks,
-                            config.index.remove_diacritics,
-                        )
-                    })?;
-                    let embeddings = if args.no_embeddings || !config.embeddings.enabled {
-                        0
-                    } else {
-                        benchmark::time_phase(&mut benchmark, "embeddings_rebuild_ms", || {
-                            vector_search::rebuild_embeddings(&db, &config)
-                        })?
-                    };
+                    let outcome = indexer::refresh_with_benchmark(
+                        &config,
+                        indexer::IndexOptions {
+                            rebuild: args.rebuild,
+                            changed_only: args.changed_only,
+                            no_embeddings: args.no_embeddings,
+                        },
+                        benchmark.as_deref_mut(),
+                    )?;
                     benchmark::time_phase(&mut benchmark, "output_ms", || {
                         output::print_index_summary(
-                            &stats,
-                            graph_report.warnings.len(),
-                            embeddings,
+                            &outcome.stats,
+                            outcome.graph_warnings,
+                            outcome.embeddings,
                         );
                     });
                     Ok(())
@@ -377,6 +343,10 @@ pub fn run() -> Result<()> {
             let config = config::load_existing(args.vault.as_deref(), global_config.as_deref())?;
             mcp_server::run(config, args)?;
         }
+        Command::Serve(args) => {
+            let config = config::load_existing(args.vault.as_deref(), global_config.as_deref())?;
+            serve::run(config, args)?;
+        }
         Command::Version => {
             println!("{} {}", env!("CARGO_PKG_NAME"), version::version());
         }
@@ -391,43 +361,4 @@ fn search_mode_name(mode: SearchMode) -> &'static str {
         SearchMode::Vector => "vector",
         SearchMode::Hybrid => "hybrid",
     }
-}
-
-fn reset_local_indexes(paths: &paths::KbPaths) -> Result<()> {
-    if paths.db_path.exists() {
-        std::fs::remove_file(&paths.db_path)
-            .with_context(|| format!("failed to delete {}", paths.db_path.display()))?;
-    }
-    if paths.tantivy_dir.exists() {
-        std::fs::remove_dir_all(&paths.tantivy_dir)
-            .with_context(|| format!("failed to delete {}", paths.tantivy_dir.display()))?;
-    }
-    Ok(())
-}
-
-fn apply_change_stats(
-    stats: &mut models::IndexStats,
-    previous: &BTreeMap<String, FileSnapshot>,
-    current: &[models::ParsedNote],
-) {
-    let current_paths = current
-        .iter()
-        .map(|note| note.path.clone())
-        .collect::<BTreeSet<_>>();
-    for note in current {
-        let current_snapshot = FileSnapshot {
-            mtime_ns: note.mtime,
-            size_bytes: note.size as i64,
-            content_hash: note.hash.clone(),
-        };
-        if previous.get(&note.path) == Some(&current_snapshot) {
-            stats.unchanged_files += 1;
-        } else {
-            stats.changed_files += 1;
-        }
-    }
-    stats.deleted_files = previous
-        .keys()
-        .filter(|path| !current_paths.contains(*path))
-        .count();
 }
