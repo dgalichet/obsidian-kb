@@ -17,6 +17,7 @@ use crate::{tantivy_index, vault};
 
 struct DoctorCounts {
     markdown_files: usize,
+    pdf_files: usize,
     indexed_files: usize,
     chunks: usize,
     embeddings: usize,
@@ -86,6 +87,12 @@ pub fn run(config: &AppConfig) -> Result<DoctorReport> {
         name: "markdown files".to_string(),
         status: "ok".to_string(),
         message: markdown_files.to_string(),
+    });
+    let pdf_files = vault::count_pdf_files(config).unwrap_or(0);
+    checks.push(DoctorCheck {
+        name: "pdf files".to_string(),
+        status: "ok".to_string(),
+        message: pdf_files.to_string(),
     });
 
     let index_dir_ok = std::fs::create_dir_all(&paths.index_dir).is_ok();
@@ -223,6 +230,7 @@ pub fn run(config: &AppConfig) -> Result<DoctorReport> {
         paths,
         DoctorCounts {
             markdown_files,
+            pdf_files,
             indexed_files: notes,
             chunks,
             embeddings,
@@ -495,6 +503,7 @@ fn report(
         vault_path: paths.vault_path.display().to_string(),
         index_dir: paths.index_dir.display().to_string(),
         markdown_files: counts.markdown_files,
+        pdf_files: counts.pdf_files,
         indexed_files: counts.indexed_files,
         embeddings: counts.embeddings,
         issue_count: issues.len(),

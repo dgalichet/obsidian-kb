@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use crate::models::{GraphReport, ParsedNote};
+use crate::models::{DocumentKind, GraphReport, ParsedNote};
 use crate::normalization;
 
 pub fn resolve_links(notes: &mut [ParsedNote]) -> GraphReport {
@@ -27,10 +27,6 @@ pub fn resolve_links(notes: &mut [ParsedNote]) -> GraphReport {
             .entry(normalize_target(stem))
             .or_default()
             .push(note.path.clone());
-        title_map
-            .entry(normalize_target(&note.title))
-            .or_default()
-            .push(note.path.clone());
         heading_map.insert(
             note.path.clone(),
             note.headings
@@ -38,11 +34,17 @@ pub fn resolve_links(notes: &mut [ParsedNote]) -> GraphReport {
                 .flat_map(|heading| [heading.slug.clone(), normalize_target(&heading.text)])
                 .collect(),
         );
-        for alias in &note.aliases {
-            alias_map
-                .entry(normalize_target(alias))
+        if note.document_kind == DocumentKind::Markdown {
+            title_map
+                .entry(normalize_target(&note.title))
                 .or_default()
                 .push(note.path.clone());
+            for alias in &note.aliases {
+                alias_map
+                    .entry(normalize_target(alias))
+                    .or_default()
+                    .push(note.path.clone());
+            }
         }
     }
 

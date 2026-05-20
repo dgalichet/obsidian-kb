@@ -18,6 +18,7 @@ pub mod models;
 pub mod normalization;
 pub mod output;
 pub mod paths;
+pub mod pdf;
 pub mod properties;
 pub mod related;
 pub mod schema;

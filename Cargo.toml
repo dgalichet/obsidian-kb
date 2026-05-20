@@ -24,6 +24,7 @@ fastembed = { version = "5.13.3", default-features = false, features = ["hf-hub-
 globset = "0.4"
 ignore = "0.4"
 indicatif = "0.17"
+lopdf = "0.40"
 owo-colors = "4"
 rayon = "1"
 regex = "1"

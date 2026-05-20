@@ -192,6 +192,7 @@ fn aggregate_notes(
             .entry(chunk.note_path.clone())
             .or_insert_with(|| NoteAccumulator {
                 path: chunk.note_path.clone(),
+                document_kind: chunk.document_kind,
                 title: chunk.title.clone(),
                 tags: chunk.tags.clone(),
                 chunks: Vec::new(),
@@ -199,9 +200,12 @@ fn aggregate_notes(
         entry.chunks.push(RelatedChunk {
             chunk_id: chunk.chunk_id,
             score: candidate.score,
+            document_kind: chunk.document_kind,
             heading_path: chunk.heading_path,
             start_line: chunk.start_line,
             end_line: chunk.end_line,
+            start_page: chunk.start_page,
+            end_page: chunk.end_page,
             snippet: make_snippet(&chunk.text, 180),
         });
     }
@@ -220,6 +224,7 @@ fn aggregate_notes(
                 rank: 0,
                 score: best.score,
                 path: note.path,
+                document_kind: note.document_kind,
                 title: note.title,
                 tags: note.tags,
                 best_chunk_id: best.chunk_id.clone(),
@@ -303,6 +308,7 @@ fn make_snippet(text: &str, max_chars: usize) -> String {
 
 struct NoteAccumulator {
     path: String,
+    document_kind: crate::models::DocumentKind,
     title: String,
     tags: Vec<String>,
     chunks: Vec<RelatedChunk>,

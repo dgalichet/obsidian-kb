@@ -42,6 +42,8 @@ pub struct IndexConfig {
     pub remove_diacritics: bool,
     #[serde(default)]
     pub properties: PropertyIndexConfig,
+    #[serde(default)]
+    pub pdf: PdfIndexConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -77,6 +79,23 @@ impl Default for PropertyIndexConfig {
             filter_keys: default_property_filter_keys(),
             ignored_keys: default_property_ignored_keys(),
             max_value_chars: default_property_max_value_chars(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PdfIndexConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_pdf_max_file_size_mb")]
+    pub max_file_size_mb: usize,
+}
+
+impl Default for PdfIndexConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            max_file_size_mb: default_pdf_max_file_size_mb(),
         }
     }
 }
@@ -180,6 +199,7 @@ impl AppConfig {
                 exclude_headings: Vec::new(),
                 remove_diacritics: true,
                 properties: PropertyIndexConfig::default(),
+                pdf: PdfIndexConfig::default(),
             },
             search: SearchConfig {
                 default_mode: "hybrid".to_string(),
@@ -304,6 +324,10 @@ fn default_property_ignored_keys() -> Vec<String> {
 
 fn default_property_max_value_chars() -> usize {
     200
+}
+
+fn default_pdf_max_file_size_mb() -> usize {
+    50
 }
 
 pub fn save_config(config: &AppConfig) -> Result<()> {

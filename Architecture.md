@@ -22,6 +22,8 @@ The project stays local-first:
 ```text
 Obsidian Markdown vault
   -> Markdown, frontmatter, tag, alias, and wikilink parsing
+Optional PDF attachments
+  -> local text extraction by page
   -> heading-aware chunking
   -> SQLite metadata, structured property filters, and embedding storage
   -> Tantivy BM25 full-text index
@@ -69,7 +71,8 @@ injecting every YAML field into BM25 or vector embeddings.
 Indexing is idempotent. Normal indexing compares content hash, mtime, and file
 size. It reloads the vault, refreshes SQLite and Tantivy surfaces, and reuses
 unchanged chunk embeddings when the chunk content hash still matches. Deleted
-Markdown files disappear from SQLite and Tantivy on the next index run. The
+indexed Markdown and PDF files disappear from SQLite and Tantivy on the next
+index run. The
 legacy `--changed-only` flag is still accepted, but it is a deprecated alias for
 normal indexing, not a true changed-only SQLite/Tantivy update.
 
@@ -179,6 +182,10 @@ chunk_overlap_chars = 300
 max_chunk_chars = 5000
 exclude_headings = []
 remove_diacritics = true
+
+[index.pdf]
+enabled = false
+max_file_size_mb = 50
 
 [search]
 default_mode = "hybrid"
@@ -314,6 +321,8 @@ files.
 - Graph expansion is depth-limited and intentionally shallow.
 - Markdown parsing targets common Obsidian patterns, not every Markdown
   extension.
+- PDF indexing extracts embedded text only. Image-only scanned PDFs require OCR
+  before `obsidian-kb` can retrieve their contents.
 
 ## Roadmap
 

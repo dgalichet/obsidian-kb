@@ -13,6 +13,8 @@ fn config_defaults_and_loading_are_vault_relative() {
     assert!(config.index.exclude_headings.is_empty());
     assert!(config.index.properties.enabled);
     assert_eq!(config.index.properties.filter_keys, vec!["*".to_string()]);
+    assert!(!config.index.pdf.enabled);
+    assert_eq!(config.index.pdf.max_file_size_mb, 50);
     assert!(!config.benchmark.enabled);
     assert!(
         config
@@ -37,6 +39,7 @@ fn vault_traversal_counts_markdown_and_honors_excludes() {
     std::fs::create_dir_all(vault_path.join("Templates")).unwrap();
     std::fs::create_dir_all(vault_path.join("notes")).unwrap();
     std::fs::write(vault_path.join("notes/keep.md"), "# Keep").unwrap();
+    std::fs::write(vault_path.join("notes/skip.pdf"), "%PDF-1.4").unwrap();
     std::fs::write(vault_path.join("Templates/skip.md"), "# Skip").unwrap();
     std::fs::write(vault_path.join("notes/ignore.txt"), "not markdown").unwrap();
 
@@ -47,6 +50,7 @@ fn vault_traversal_counts_markdown_and_honors_excludes() {
     assert_eq!(notes.len(), 1);
     assert_eq!(notes[0].path, "notes/keep.md");
     assert_eq!(vault::count_markdown_files(&config).unwrap(), 1);
+    assert_eq!(vault::count_pdf_files(&config).unwrap(), 0);
 }
 
 #[test]
@@ -177,4 +181,23 @@ fn existing_configs_without_index_exclude_headings_still_load() {
     let loaded = config::load_existing(None, Some(&path)).unwrap();
 
     assert!(loaded.index.exclude_headings.is_empty());
+}
+
+#[test]
+fn existing_configs_without_index_pdf_still_load() {
+    let temp = tempfile::tempdir().unwrap();
+    let vault_path = temp.path().join("vault");
+    std::fs::create_dir_all(&vault_path).unwrap();
+
+    let original = AppConfig::default_for_vault_in(&vault_path, None, temp.path()).unwrap();
+    let mut toml: toml::Value = toml::to_string_pretty(&original).unwrap().parse().unwrap();
+    toml["index"].as_table_mut().unwrap().remove("pdf");
+
+    let path = temp.path().join(".obsidian-kb.toml");
+    std::fs::write(&path, toml::to_string_pretty(&toml).unwrap()).unwrap();
+
+    let loaded = config::load_existing(None, Some(&path)).unwrap();
+
+    assert!(!loaded.index.pdf.enabled);
+    assert_eq!(loaded.index.pdf.max_file_size_mb, 50);
 }

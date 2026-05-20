@@ -12,6 +12,7 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             id INTEGER PRIMARY KEY,
             path TEXT NOT NULL,
             rel_path TEXT NOT NULL UNIQUE,
+            document_kind TEXT NOT NULL DEFAULT 'markdown',
             title TEXT NOT NULL,
             folder TEXT,
             mtime_ns INTEGER,
@@ -31,7 +32,9 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             content TEXT NOT NULL,
             content_hash TEXT NOT NULL,
             start_line INTEGER,
-            end_line INTEGER
+            end_line INTEGER,
+            start_page INTEGER,
+            end_page INTEGER
         );
 
         CREATE TABLE IF NOT EXISTS embeddings (
@@ -88,7 +91,16 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_aliases_file_id ON aliases(file_id);
         CREATE INDEX IF NOT EXISTS idx_aliases_alias ON aliases(alias);
         "#,
-    )
+    )?;
+    add_column_if_missing(
+        conn,
+        "files",
+        "document_kind",
+        "document_kind TEXT NOT NULL DEFAULT 'markdown'",
+    )?;
+    add_column_if_missing(conn, "chunks", "start_page", "start_page INTEGER")?;
+    add_column_if_missing(conn, "chunks", "end_page", "end_page INTEGER")?;
+    Ok(())
 }
 
 fn legacy_schema_present(conn: &Connection) -> Result<bool> {
@@ -136,4 +148,16 @@ fn column_exists(conn: &Connection, table: &str, column: &str) -> Result<bool> {
         }
     }
     Ok(false)
+}
+
+fn add_column_if_missing(
+    conn: &Connection,
+    table: &str,
+    column: &str,
+    definition: &str,
+) -> Result<()> {
+    if !column_exists(conn, table, column)? {
+        conn.execute(&format!("ALTER TABLE {table} ADD COLUMN {definition}"), [])?;
+    }
+    Ok(())
 }
