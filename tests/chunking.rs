@@ -1,6 +1,6 @@
 use obsidian_kb::{
     chunking,
-    config::{IndexConfig, PropertyIndexConfig},
+    config::{IndexConfig, PdfIndexConfig, PropertyIndexConfig},
     markdown,
 };
 use std::path::PathBuf;
@@ -135,5 +135,6 @@ fn index_config() -> IndexConfig {
         exclude_headings: Vec::new(),
         remove_diacritics: true,
         properties: PropertyIndexConfig::default(),
+        pdf: PdfIndexConfig::default(),
     }
 }

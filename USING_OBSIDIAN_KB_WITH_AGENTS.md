@@ -41,6 +41,8 @@ The useful behavior comes from selection, not volume.
 ```text
 Obsidian Markdown vault
   -> frontmatter, properties, aliases, tags, headings, wikilinks, and backlinks
+Optional PDF attachments
+  -> local text extraction by page
   -> heading-aware chunks
   -> SQLite metadata, structured filters, and local embeddings
   -> Tantivy BM25 index
@@ -169,6 +171,10 @@ chunk_overlap_chars = 300
 max_chunk_chars = 5000
 remove_diacritics = true
 
+[index.pdf]
+enabled = false
+max_file_size_mb = 50
+
 [search]
 default_mode = "hybrid"
 bm25_candidates = 80
@@ -203,6 +209,7 @@ ignore_globs = []
 Tune only when there is evidence:
 
 - chunks too large or mixed: reduce `chunk_target_chars` and `max_chunk_chars`;
+- PDF retrieval needed: enable `[index.pdf]`, then re-run `obsidian-kb index`;
 - weak recall: increase `bm25_candidates` or `vector_candidates`;
 - noisy graph expansion: reduce `graph_max_neighbors` or avoid
   `--expand-graph`;
@@ -212,6 +219,10 @@ Tune only when there is evidence:
 - repeated MCP semantic searches start cold: call the MCP `warmup` tool or set
   `mcp.preload_embedder = true`;
 - MCP memory should be released faster: reduce `mcp.idle_unload_seconds`.
+
+PDF indexing is local and text-only. Search results from PDFs include
+`document_kind = "pdf"` and page ranges in JSON. Image-only scanned PDFs need
+OCR before this tool can retrieve their contents.
 
 FastEmbed may download a local embedding model on first embedding build. The
 download is for local model files, not a hosted LLM call. If embeddings are

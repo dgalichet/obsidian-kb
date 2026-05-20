@@ -2,7 +2,7 @@ use blake3::Hasher;
 
 use crate::config::IndexConfig;
 use crate::markdown;
-use crate::models::{ChunkRecord, Heading};
+use crate::models::{ChunkRecord, DocumentKind, Heading};
 
 #[derive(Debug, Clone)]
 struct Block {
@@ -12,12 +12,34 @@ struct Block {
     text: String,
     start_line: usize,
     end_line: usize,
+    start_page: Option<usize>,
+    end_page: Option<usize>,
 }
 
 struct ChunkContext<'a> {
     note_path: &'a str,
+    document_kind: DocumentKind,
     title: &'a str,
     tags: &'a [String],
+}
+
+#[derive(Debug, Clone, Copy)]
+struct BlockLocation {
+    start_line: usize,
+    end_line: usize,
+    start_page: Option<usize>,
+    end_page: Option<usize>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TextSection {
+    pub heading_path: String,
+    pub heading_level: Option<usize>,
+    pub text: String,
+    pub start_line: usize,
+    pub end_line: usize,
+    pub start_page: Option<usize>,
+    pub end_page: Option<usize>,
 }
 
 pub fn chunk_markdown(
@@ -48,6 +70,7 @@ pub fn chunk_markdown_with_body_start_line(
     let excluded_headings = ExcludedHeadings::new(&config.exclude_headings);
     let context = ChunkContext {
         note_path,
+        document_kind: DocumentKind::Markdown,
         title,
         tags,
     };
@@ -62,6 +85,50 @@ pub fn chunk_markdown_with_body_start_line(
             continue;
         }
 
+        for (offset, chunk) in section_chunks.iter().enumerate() {
+            push_chunk(
+                &mut chunks,
+                &context,
+                section_identity_ordinal + offset,
+                chunk,
+            );
+        }
+    }
+
+    chunks
+}
+
+pub fn chunk_text_sections(
+    note_path: &str,
+    document_kind: DocumentKind,
+    title: &str,
+    tags: &[String],
+    sections: &[TextSection],
+    config: &IndexConfig,
+) -> Vec<ChunkRecord> {
+    let context = ChunkContext {
+        note_path,
+        document_kind,
+        title,
+        tags,
+    };
+    let mut chunks = Vec::new();
+    let mut identity_ordinal = 0usize;
+
+    for section in sections {
+        let section = Block {
+            heading_path: section.heading_path.clone(),
+            heading_chain: Vec::new(),
+            heading_level: section.heading_level,
+            text: section.text.clone(),
+            start_line: section.start_line,
+            end_line: section.end_line,
+            start_page: section.start_page,
+            end_page: section.end_page,
+        };
+        let section_chunks = chunk_blocks_for_section(&section, config);
+        let section_identity_ordinal = identity_ordinal;
+        identity_ordinal += section_chunks.len();
         for (offset, chunk) in section_chunks.iter().enumerate() {
             push_chunk(
                 &mut chunks,
@@ -91,8 +158,12 @@ fn sections_by_heading(body: &str, body_start_line: usize, headings: &[Heading])
             flush_block(
                 &mut sections,
                 &mut current,
-                current_start,
-                line_no.saturating_sub(1),
+                BlockLocation {
+                    start_line: current_start,
+                    end_line: line_no.saturating_sub(1),
+                    start_page: None,
+                    end_page: None,
+                },
                 &current_heading,
                 &current_heading_chain,
                 current_level,
@@ -124,8 +195,12 @@ fn sections_by_heading(body: &str, body_start_line: usize, headings: &[Heading])
     flush_block(
         &mut sections,
         &mut current,
-        current_start,
-        final_line,
+        BlockLocation {
+            start_line: current_start,
+            end_line: final_line,
+            start_page: None,
+            end_page: None,
+        },
         &current_heading,
         &current_heading_chain,
         current_level,
@@ -141,7 +216,13 @@ fn chunk_blocks_for_section(section: &Block, config: &IndexConfig) -> Vec<Block>
 }
 
 fn split_long_section(section: &Block, config: &IndexConfig) -> Vec<Block> {
-    let blocks = paragraph_blocks(&section.text, section.start_line, &section.heading_path);
+    let blocks = paragraph_blocks(
+        &section.text,
+        section.start_line,
+        &section.heading_path,
+        section.start_page,
+        section.end_page,
+    );
     let mut chunks = Vec::new();
     let mut current_text = String::new();
     let mut current_start = section.start_line;
@@ -202,10 +283,18 @@ fn push_split_block(
         text: text.to_string(),
         start_line,
         end_line,
+        start_page: section.start_page,
+        end_page: section.end_page,
     });
 }
 
-fn paragraph_blocks(text: &str, start_line: usize, heading_path: &str) -> Vec<Block> {
+fn paragraph_blocks(
+    text: &str,
+    start_line: usize,
+    heading_path: &str,
+    start_page: Option<usize>,
+    end_page: Option<usize>,
+) -> Vec<Block> {
     let mut blocks = Vec::new();
     let mut current = String::new();
     let mut current_start = start_line;
@@ -221,8 +310,12 @@ fn paragraph_blocks(text: &str, start_line: usize, heading_path: &str) -> Vec<Bl
             flush_block(
                 &mut blocks,
                 &mut current,
-                current_start,
-                line_no,
+                BlockLocation {
+                    start_line: current_start,
+                    end_line: line_no,
+                    start_page,
+                    end_page,
+                },
                 heading_path,
                 &[],
                 None,
@@ -240,8 +333,12 @@ fn paragraph_blocks(text: &str, start_line: usize, heading_path: &str) -> Vec<Bl
     flush_block(
         &mut blocks,
         &mut current,
-        current_start,
-        final_line.max(start_line),
+        BlockLocation {
+            start_line: current_start,
+            end_line: final_line.max(start_line),
+            start_page,
+            end_page,
+        },
         heading_path,
         &[],
         None,
@@ -252,8 +349,7 @@ fn paragraph_blocks(text: &str, start_line: usize, heading_path: &str) -> Vec<Bl
 fn flush_block(
     blocks: &mut Vec<Block>,
     current: &mut String,
-    start_line: usize,
-    end_line: usize,
+    location: BlockLocation,
     heading_path: &str,
     heading_chain: &[String],
     heading_level: Option<usize>,
@@ -265,8 +361,10 @@ fn flush_block(
             heading_chain: heading_chain.to_vec(),
             heading_level,
             text: text.to_string(),
-            start_line,
-            end_line: end_line.max(start_line),
+            start_line: location.start_line,
+            end_line: location.end_line.max(location.start_line),
+            start_page: location.start_page,
+            end_page: location.end_page,
         });
     }
     current.clear();
@@ -338,6 +436,7 @@ fn push_chunk(
         file_id: 0,
         chunk_id,
         note_path: context.note_path.to_string(),
+        document_kind: context.document_kind,
         title: context.title.to_string(),
         ordinal,
         heading_path: block.heading_path.clone(),
@@ -345,6 +444,8 @@ fn push_chunk(
         text: trimmed.to_string(),
         start_line: block.start_line,
         end_line: block.end_line,
+        start_page: block.start_page,
+        end_page: block.end_page,
         text_hash,
         tags: context.tags.to_vec(),
     });

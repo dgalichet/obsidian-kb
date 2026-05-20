@@ -128,9 +128,10 @@ obsidian-kb search "query" --mode hybrid --expand-graph --json
 obsidian-kb search "query" --mode hybrid --top 5 --include-text --max-chars 1200 --json
 ```
 
-The JSON output is grouped by note. Each note includes its best chunk, matched
-chunk count, matched chunks with headings, line ranges, snippets, chunk IDs,
-ranks, scores, and graph boosts.
+The JSON output is grouped by indexed document. Each result includes its best
+chunk, matched chunk count, matched chunks with headings, line ranges, optional
+PDF page ranges, snippets, chunk IDs, ranks, scores, document kind, and graph
+boosts.
 
 ## Related Notes
 
@@ -165,6 +166,23 @@ Heading matches are case-insensitive and include descendants, so excluding
 paths are supported for narrower exclusions, for example
 `"Project A > Relations"`. Wikilinks are still extracted from the whole note
 for graph context.
+
+## PDF Attachments
+
+PDF indexing is local and opt-in. Enable it in `.obsidian-kb.toml`:
+
+```toml
+[index.pdf]
+enabled = true
+max_file_size_mb = 50
+```
+
+When enabled, `index` also scans non-excluded `.pdf` files, extracts embedded
+text locally with `lopdf`, chunks each text-bearing page as `Page N`, and stores
+the chunks alongside Markdown chunks for BM25, vector, and hybrid search. PDF
+results use `document_kind = "pdf"` and include `start_page`/`end_page` fields
+in JSON output. Scanned image-only PDFs need OCR first; this feature does not
+call hosted APIs or write extracted text back to the vault.
 
 ## Structured Filters
 

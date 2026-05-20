@@ -5,9 +5,9 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::Path;
 
 use crate::models::{
-    ChunkRecord, GraphEdge, GraphView, IndexStats, NoteSummary, ParsedNote, PropertyFacetReport,
-    PropertyFilter, PropertyKeyFacet, PropertyOperator, PropertyValueFacet, SearchFilters,
-    StatsReport, TagFacet, UnresolvedLinkRecord,
+    ChunkRecord, DocumentKind, GraphEdge, GraphView, IndexStats, NoteSummary, ParsedNote,
+    PropertyFacetReport, PropertyFilter, PropertyKeyFacet, PropertyOperator, PropertyValueFacet,
+    SearchFilters, StatsReport, TagFacet, UnresolvedLinkRecord,
 };
 use crate::properties;
 use crate::schema;
@@ -86,11 +86,12 @@ impl Db {
 
         for note in notes {
             tx.execute(
-                "INSERT INTO files(path, rel_path, title, folder, mtime_ns, size_bytes, content_hash, frontmatter_json, indexed_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                "INSERT INTO files(path, rel_path, document_kind, title, folder, mtime_ns, size_bytes, content_hash, frontmatter_json, indexed_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
                 params![
                     note.absolute_path.to_string_lossy(),
                     note.path,
+                    note.document_kind.as_str(),
                     note.title,
                     empty_as_none(&note.folder),
                     note.mtime,
@@ -109,8 +110,8 @@ impl Db {
             let file_id = file_ids[&note.path];
             for chunk in &note.chunks {
                 tx.execute(
-                    "INSERT INTO chunks(id, file_id, chunk_index, title, heading_path, heading_level, content, content_hash, start_line, end_line)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                    "INSERT INTO chunks(id, file_id, chunk_index, title, heading_path, heading_level, content, content_hash, start_line, end_line, start_page, end_page)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
                     params![
                         chunk.chunk_id,
                         file_id,
@@ -121,7 +122,9 @@ impl Db {
                         chunk.text,
                         chunk.text_hash,
                         chunk.start_line as i64,
-                        chunk.end_line as i64
+                        chunk.end_line as i64,
+                        chunk.start_page.map(|page| page as i64),
+                        chunk.end_page.map(|page| page as i64)
                     ],
                 )?;
                 chunk_hashes.insert(chunk.chunk_id.clone(), chunk.text_hash.clone());
@@ -194,7 +197,7 @@ impl Db {
             .chain(graph_warnings.iter().cloned())
             .collect::<Vec<_>>();
         tx.execute(
-            "INSERT OR REPLACE INTO meta(key, value) VALUES ('schema_version', '2')",
+            "INSERT OR REPLACE INTO meta(key, value) VALUES ('schema_version', '3')",
             [],
         )?;
         tx.execute(
@@ -517,6 +520,8 @@ impl Db {
     pub fn stats(&self) -> Result<StatsReport> {
         Ok(StatsReport {
             notes: self.count_table("files")?,
+            markdown_files: self.count_where("files", "document_kind = 'markdown'")?,
+            pdf_files: self.count_where("files", "document_kind = 'pdf'")?,
             chunks: self.count_table("chunks")?,
             aliases: self.count_table("aliases")?,
             tags: self.count_table("tags")?,
@@ -868,23 +873,26 @@ impl Db {
 
 const CHUNK_SELECT_BASE: &str = "\
     SELECT c.id, c.file_id, f.rel_path, c.title, c.chunk_index, IFNULL(c.heading_path, ''),
-           c.heading_level, c.content, c.start_line, c.end_line, c.content_hash,
+           c.heading_level, c.content, c.start_line, c.end_line, c.start_page, c.end_page,
+           c.content_hash, f.document_kind,
            IFNULL((SELECT group_concat(tag, ' ') FROM tags WHERE file_id = c.file_id), '')
     FROM chunks c
     JOIN files f ON f.id = c.file_id";
 
 fn chunk_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ChunkRecord> {
-    let tags: String = row.get(11)?;
+    let tags: String = row.get(14)?;
     let tags = tags
         .split_whitespace()
         .map(ToOwned::to_owned)
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect();
+    let document_kind: String = row.get(13)?;
     Ok(ChunkRecord {
         chunk_id: row.get(0)?,
         file_id: row.get(1)?,
         note_path: row.get(2)?,
+        document_kind: document_kind.parse().unwrap_or(DocumentKind::Markdown),
         title: row.get(3)?,
         ordinal: row.get::<_, i64>(4)? as usize,
         heading_path: row.get(5)?,
@@ -892,7 +900,9 @@ fn chunk_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ChunkRecord> {
         text: row.get(7)?,
         start_line: row.get::<_, Option<i64>>(8)?.unwrap_or_default() as usize,
         end_line: row.get::<_, Option<i64>>(9)?.unwrap_or_default() as usize,
-        text_hash: row.get(10)?,
+        start_page: row.get::<_, Option<i64>>(10)?.map(|page| page as usize),
+        end_page: row.get::<_, Option<i64>>(11)?.map(|page| page as usize),
+        text_hash: row.get(12)?,
         tags,
     })
 }

@@ -9,14 +9,28 @@ use crate::chunking;
 use crate::config::AppConfig;
 use crate::frontmatter;
 use crate::markdown;
-use crate::models::ParsedNote;
+use crate::models::{DocumentKind, ParsedNote};
+use crate::pdf;
 use crate::properties;
 
 pub fn load_vault(config: &AppConfig) -> Result<Vec<ParsedNote>> {
     let markdown_paths = markdown_paths(config)?;
-    let mut notes = Vec::with_capacity(markdown_paths.len());
+    let pdf_paths = if config.index.pdf.enabled {
+        pdf_paths(config)?
+    } else {
+        Vec::new()
+    };
+    let mut notes = Vec::with_capacity(markdown_paths.len() + pdf_paths.len());
     for (path, relative_string) in markdown_paths {
         notes.push(parse_note_file(
+            config.vault_path(),
+            &path,
+            &relative_string,
+            config,
+        )?);
+    }
+    for (path, relative_string) in pdf_paths {
+        notes.push(pdf::parse_pdf_file(
             config.vault_path(),
             &path,
             &relative_string,
@@ -32,11 +46,27 @@ pub fn count_markdown_files(config: &AppConfig) -> Result<usize> {
     Ok(markdown_paths(config)?.len())
 }
 
+pub fn count_pdf_files(config: &AppConfig) -> Result<usize> {
+    if config.index.pdf.enabled {
+        Ok(pdf_paths(config)?.len())
+    } else {
+        Ok(0)
+    }
+}
+
 pub fn validate_exclude_globs(patterns: &[String]) -> Result<()> {
     build_excludes(patterns).map(|_| ())
 }
 
 fn markdown_paths(config: &AppConfig) -> Result<Vec<(PathBuf, String)>> {
+    document_paths(config, "md")
+}
+
+fn pdf_paths(config: &AppConfig) -> Result<Vec<(PathBuf, String)>> {
+    document_paths(config, "pdf")
+}
+
+fn document_paths(config: &AppConfig, extension: &str) -> Result<Vec<(PathBuf, String)>> {
     let excludes = build_excludes(&config.vault.exclude_globs)?;
     let mut paths = Vec::new();
     let walker = WalkBuilder::new(config.vault_path())
@@ -52,7 +82,11 @@ fn markdown_paths(config: &AppConfig) -> Result<Vec<(PathBuf, String)>> {
             continue;
         }
         let path = entry.path();
-        if path.extension().and_then(|ext| ext.to_str()) != Some("md") {
+        if !path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case(extension))
+        {
             continue;
         }
         let relative = path.strip_prefix(config.vault_path())?;
@@ -152,6 +186,7 @@ pub fn parse_note_content(
     Ok(ParsedNote {
         path: relative_path.to_string(),
         absolute_path,
+        document_kind: DocumentKind::Markdown,
         title,
         folder,
         hash: blake3::hash(content.as_bytes()).to_hex().to_string(),

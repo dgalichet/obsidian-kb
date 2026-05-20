@@ -216,6 +216,7 @@ fn aggregate_note_hits(
             .entry(chunk.note_path.clone())
             .or_insert_with(|| NoteAccumulator {
                 path: chunk.note_path.clone(),
+                document_kind: chunk.document_kind,
                 title: chunk.title.clone(),
                 tags: chunk.tags.clone(),
                 chunks: Vec::new(),
@@ -223,10 +224,13 @@ fn aggregate_note_hits(
         entry.chunks.push(SearchMatchedChunk {
             chunk_id: chunk.chunk_id,
             score: candidate.score,
+            document_kind: chunk.document_kind,
             heading_path: chunk.heading_path.clone(),
             heading: chunk.heading_path,
             start_line: chunk.start_line,
             end_line: chunk.end_line,
+            start_page: chunk.start_page,
+            end_page: chunk.end_page,
             snippet: make_snippet(&chunk.text, 240),
             text: include_text.then(|| limit_text(&chunk.text, max_chars)),
             bm25_rank: candidate.lexical_rank,
@@ -254,12 +258,15 @@ fn aggregate_note_hits(
                 final_rank: 0,
                 final_score: best.score,
                 path: note.path,
+                document_kind: note.document_kind,
                 title: note.title,
                 tags: note.tags,
                 best_chunk_id: best.chunk_id.clone(),
                 best_heading: best.heading_path.clone(),
                 best_start_line: best.start_line,
                 best_end_line: best.end_line,
+                best_start_page: best.start_page,
+                best_end_page: best.end_page,
                 best_snippet: best.snippet.clone(),
                 matched_chunks: note.chunks.len(),
                 text: best.text.clone(),
@@ -443,6 +450,7 @@ fn limit_text(text: &str, max_chars: usize) -> String {
 
 struct NoteAccumulator {
     path: String,
+    document_kind: crate::models::DocumentKind,
     title: String,
     tags: Vec<String>,
     chunks: Vec<SearchMatchedChunk>,

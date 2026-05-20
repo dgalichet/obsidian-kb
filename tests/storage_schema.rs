@@ -27,6 +27,7 @@ fn index_storage_matches_sqlite_and_tantivy_contract() {
             "id",
             "path",
             "rel_path",
+            "document_kind",
             "title",
             "folder",
             "mtime_ns",
@@ -50,6 +51,8 @@ fn index_storage_matches_sqlite_and_tantivy_contract() {
             "content_hash",
             "start_line",
             "end_line",
+            "start_page",
+            "end_page",
         ],
     );
     assert_table_columns(

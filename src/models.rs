@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::PathBuf;
+use std::str::FromStr;
 
 use crate::cli::SearchModeArg;
 
@@ -32,10 +33,39 @@ impl SearchMode {
     }
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DocumentKind {
+    Markdown,
+    Pdf,
+}
+
+impl DocumentKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Markdown => "markdown",
+            Self::Pdf => "pdf",
+        }
+    }
+}
+
+impl FromStr for DocumentKind {
+    type Err = ();
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "markdown" => Ok(Self::Markdown),
+            "pdf" => Ok(Self::Pdf),
+            _ => Err(()),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ParsedNote {
     pub path: String,
     pub absolute_path: PathBuf,
+    pub document_kind: DocumentKind,
     pub title: String,
     pub folder: String,
     pub hash: String,
@@ -142,6 +172,7 @@ pub struct ChunkRecord {
     pub file_id: i64,
     pub chunk_id: String,
     pub note_path: String,
+    pub document_kind: DocumentKind,
     pub title: String,
     pub ordinal: usize,
     pub heading_path: String,
@@ -149,6 +180,10 @@ pub struct ChunkRecord {
     pub text: String,
     pub start_line: usize,
     pub end_line: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_page: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_page: Option<usize>,
     pub text_hash: String,
     pub tags: Vec<String>,
 }
@@ -182,12 +217,17 @@ pub struct SearchHit {
     pub final_rank: usize,
     pub final_score: f32,
     pub path: String,
+    pub document_kind: DocumentKind,
     pub title: String,
     pub tags: Vec<String>,
     pub best_chunk_id: String,
     pub best_heading: String,
     pub best_start_line: usize,
     pub best_end_line: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub best_start_page: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub best_end_page: Option<usize>,
     pub best_snippet: String,
     pub matched_chunks: usize,
     pub chunks: Vec<SearchMatchedChunk>,
@@ -208,10 +248,15 @@ pub struct SearchHit {
 pub struct SearchMatchedChunk {
     pub chunk_id: String,
     pub score: f32,
+    pub document_kind: DocumentKind,
     pub heading_path: String,
     pub heading: String,
     pub start_line: usize,
     pub end_line: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_page: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_page: Option<usize>,
     pub snippet: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
@@ -250,6 +295,7 @@ pub struct RelatedNote {
     pub rank: usize,
     pub score: f32,
     pub path: String,
+    pub document_kind: DocumentKind,
     pub title: String,
     pub tags: Vec<String>,
     pub best_chunk_id: String,
@@ -263,9 +309,14 @@ pub struct RelatedNote {
 pub struct RelatedChunk {
     pub chunk_id: String,
     pub score: f32,
+    pub document_kind: DocumentKind,
     pub heading_path: String,
     pub start_line: usize,
     pub end_line: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_page: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_page: Option<usize>,
     pub snippet: String,
 }
 
@@ -312,6 +363,8 @@ pub struct GraphEdge {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StatsReport {
     pub notes: usize,
+    pub markdown_files: usize,
+    pub pdf_files: usize,
     pub chunks: usize,
     pub aliases: usize,
     pub tags: usize,
@@ -329,6 +382,7 @@ pub struct DoctorReport {
     pub vault_path: String,
     pub index_dir: String,
     pub markdown_files: usize,
+    pub pdf_files: usize,
     pub indexed_files: usize,
     pub embeddings: usize,
     pub issue_count: usize,

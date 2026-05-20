@@ -3,6 +3,7 @@ mod common;
 use assert_cmd::Command;
 use obsidian_kb::{config, models::SearchHit};
 use predicates::prelude::*;
+use rusqlite::Connection;
 
 #[test]
 fn bm25_search_finds_exact_note() {
@@ -32,6 +33,64 @@ fn bm25_search_finds_exact_note() {
         .assert()
         .success()
         .stdout(predicate::str::contains("aws/service-connect.md"));
+}
+
+#[test]
+fn bm25_search_finds_enabled_pdf_text() {
+    let (_temp, vault) = common::temp_vault();
+    let docs = vault.join("docs");
+    std::fs::create_dir_all(&docs).unwrap();
+    common::write_minimal_pdf(&docs.join("hello-world.pdf"));
+
+    let mut app_config = config::AppConfig::default_for_vault_in(&vault, None, &vault).unwrap();
+    app_config.index.pdf.enabled = true;
+    config::save_config(&app_config).unwrap();
+
+    Command::cargo_bin("obsidian-kb")
+        .unwrap()
+        .args([
+            "index",
+            "--vault",
+            vault.to_str().unwrap(),
+            "--no-embeddings",
+        ])
+        .assert()
+        .success();
+
+    let db = Connection::open(vault.join(".obsidian-kb/metadata.sqlite")).unwrap();
+    let kind: String = db
+        .query_row(
+            "SELECT document_kind FROM files WHERE rel_path = 'docs/hello-world.pdf'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(kind, "pdf");
+
+    let output = Command::cargo_bin("obsidian-kb")
+        .unwrap()
+        .args([
+            "search",
+            "--vault",
+            vault.to_str().unwrap(),
+            "--mode",
+            "bm25",
+            "--top",
+            "5",
+            "--json",
+            "Hello World",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let hits: Vec<SearchHit> = serde_json::from_slice(&output.stdout).unwrap();
+    let hit = hits
+        .iter()
+        .find(|hit| hit.path == "docs/hello-world.pdf")
+        .expect("PDF search hit");
+    assert_eq!(hit.document_kind, obsidian_kb::models::DocumentKind::Pdf);
+    assert_eq!(hit.best_start_page, Some(1));
+    assert!(hit.best_snippet.contains("Hello World"));
 }
 
 #[test]

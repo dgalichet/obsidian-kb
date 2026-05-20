@@ -10,7 +10,7 @@ use crate::models::{
 
 pub fn print_index_summary(stats: &IndexStats, graph_warnings: usize, embeddings: usize) {
     println!(
-        "{} notes, {} chunks, {} links, {} aliases, {} tags, {} properties",
+        "{} documents, {} chunks, {} links, {} aliases, {} tags, {} properties",
         stats.notes.green(),
         stats.chunks.green(),
         stats.links.green(),
@@ -120,7 +120,15 @@ pub fn print_chunk(chunk: &ChunkRecord) {
     if !chunk.heading_path.is_empty() {
         println!("heading: {}", chunk.heading_path);
     }
-    println!("lines: {}-{}", chunk.start_line, chunk.end_line);
+    if let Some(start_page) = chunk.start_page {
+        println!(
+            "pages: {}-{}",
+            start_page,
+            chunk.end_page.unwrap_or(start_page)
+        );
+    } else {
+        println!("lines: {}-{}", chunk.start_line, chunk.end_line);
+    }
     if !chunk.tags.is_empty() {
         println!("tags: {}", chunk.tags.join(", "));
     }
@@ -199,6 +207,8 @@ pub fn print_stats(report: &StatsReport) {
         .load_preset(UTF8_FULL)
         .set_header(vec!["item", "count"]);
     table.add_row(vec!["notes", &report.notes.to_string()]);
+    table.add_row(vec!["markdown_files", &report.markdown_files.to_string()]);
+    table.add_row(vec!["pdf_files", &report.pdf_files.to_string()]);
     table.add_row(vec!["chunks", &report.chunks.to_string()]);
     table.add_row(vec!["aliases", &report.aliases.to_string()]);
     table.add_row(vec!["tags", &report.tags.to_string()]);
@@ -261,6 +271,7 @@ pub fn print_doctor_report(report: &DoctorReport) {
         .load_preset(UTF8_FULL)
         .set_header(vec!["item", "count"]);
     counts.add_row(vec!["markdown_files", &report.markdown_files.to_string()]);
+    counts.add_row(vec!["pdf_files", &report.pdf_files.to_string()]);
     counts.add_row(vec!["indexed_files", &report.indexed_files.to_string()]);
     counts.add_row(vec!["chunks", &report.chunks.to_string()]);
     counts.add_row(vec!["embeddings", &report.embeddings.to_string()]);
