@@ -15,16 +15,7 @@ fn chunks_attach_heading_metadata() {
         &["tag".to_string()],
         body,
         &headings,
-        &IndexConfig {
-            store_dir: PathBuf::from(".obsidian-kb"),
-            database_path: PathBuf::from(".obsidian-kb/metadata.sqlite"),
-            tantivy_index_dir: PathBuf::from(".obsidian-kb/tantivy"),
-            chunk_target_chars: 1000,
-            chunk_overlap_chars: 0,
-            max_chunk_chars: 1200,
-            remove_diacritics: true,
-            properties: PropertyIndexConfig::default(),
-        },
+        &index_config(),
     );
     assert_eq!(chunks.len(), 2);
     assert!(chunks[0].heading_path.contains("Top"));
@@ -52,14 +43,9 @@ fn splits_long_heading_sections_by_paragraphs() {
         &body,
         &headings,
         &IndexConfig {
-            store_dir: PathBuf::from(".obsidian-kb"),
-            database_path: PathBuf::from(".obsidian-kb/metadata.sqlite"),
-            tantivy_index_dir: PathBuf::from(".obsidian-kb/tantivy"),
-            chunk_target_chars: 1000,
             chunk_overlap_chars: 100,
             max_chunk_chars: 1800,
-            remove_diacritics: true,
-            properties: PropertyIndexConfig::default(),
+            ..index_config()
         },
     );
 
@@ -67,4 +53,49 @@ fn splits_long_heading_sections_by_paragraphs() {
     assert!(chunks.iter().all(|chunk| chunk.heading_path == "Long"));
     assert!(chunks.iter().all(|chunk| chunk.heading_level == Some(1)));
     assert!(chunks.iter().any(|chunk| chunk.text.contains("```rust")));
+}
+
+#[test]
+fn excludes_configured_heading_sections_and_descendants() {
+    let body = "# Main\n\nSemantic content.\n\n## Relations\n\n[[linked-note]] should not influence retrieval.\n\n### Backlinks\n\nMore link noise.\n\n## Sources\n\nReference noise.\n\n## Details\n\nMore semantic content.";
+    let headings = markdown::extract_headings(body);
+    let chunks = chunking::chunk_markdown(
+        "filtered.md",
+        "Filtered",
+        &[],
+        body,
+        &headings,
+        &IndexConfig {
+            exclude_headings: vec!["Relations".to_string(), "Sources".to_string()],
+            ..index_config()
+        },
+    );
+
+    assert_eq!(chunks.len(), 2);
+    assert_eq!(chunks[0].heading_path, "Main");
+    assert_eq!(chunks[1].heading_path, "Main > Details");
+    assert!(
+        chunks
+            .iter()
+            .all(|chunk| !chunk.text.contains("linked-note"))
+    );
+    assert!(
+        chunks
+            .iter()
+            .all(|chunk| !chunk.text.contains("Reference noise"))
+    );
+}
+
+fn index_config() -> IndexConfig {
+    IndexConfig {
+        store_dir: PathBuf::from(".obsidian-kb"),
+        database_path: PathBuf::from(".obsidian-kb/metadata.sqlite"),
+        tantivy_index_dir: PathBuf::from(".obsidian-kb/tantivy"),
+        chunk_target_chars: 1000,
+        chunk_overlap_chars: 0,
+        max_chunk_chars: 1200,
+        exclude_headings: Vec::new(),
+        remove_diacritics: true,
+        properties: PropertyIndexConfig::default(),
+    }
 }
