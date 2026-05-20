@@ -95,6 +95,12 @@ scores stored embeddings, excludes the source note, and aggregates matching
 chunks by note. For draft text, it embeds the provided text locally and uses the
 same aggregation path.
 
+`index.exclude_headings` removes configured Markdown sections and their
+descendants from chunk creation, so those sections do not enter BM25, embeddings,
+or related-note scoring. Link extraction still reads the whole note, allowing
+metadata sections such as `Relations` to preserve graph context without
+dominating semantic retrieval.
+
 Structured filters run against SQLite metadata. `--tag` requires tags extracted
 from frontmatter or Markdown body text, and `--property KEY=VALUE` requires a
 simple YAML frontmatter property value. Property filters also support `!=`,
@@ -171,6 +177,7 @@ tantivy_index_dir = ".obsidian-kb/tantivy"
 chunk_target_chars = 3000
 chunk_overlap_chars = 300
 max_chunk_chars = 5000
+exclude_headings = []
 remove_diacritics = true
 
 [search]

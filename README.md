@@ -150,6 +150,22 @@ same vector load/scoring phases as `search`, plus `related_aggregate_notes_ms`.
 In MCP and HTTP serve mode, repeated vector and related searches reuse cached
 stored embeddings and report `vector_embeddings_cached`.
 
+## Index Exclusions
+
+Use `index.exclude_headings` to keep noisy metadata sections out of BM25,
+embeddings, and related-note scoring:
+
+```toml
+[index]
+exclude_headings = ["Relations", "Sources"]
+```
+
+Heading matches are case-insensitive and include descendants, so excluding
+`Relations` also excludes `### Backlinks` under `## Relations`. Full heading
+paths are supported for narrower exclusions, for example
+`"Project A > Relations"`. Wikilinks are still extracted from the whole note
+for graph context.
+
 ## Structured Filters
 
 `obsidian-kb` indexes tags and simple YAML frontmatter properties as structured

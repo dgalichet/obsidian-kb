@@ -37,6 +37,8 @@ pub struct IndexConfig {
     pub chunk_target_chars: usize,
     pub chunk_overlap_chars: usize,
     pub max_chunk_chars: usize,
+    #[serde(default)]
+    pub exclude_headings: Vec<String>,
     pub remove_diacritics: bool,
     #[serde(default)]
     pub properties: PropertyIndexConfig,
@@ -175,6 +177,7 @@ impl AppConfig {
                 chunk_target_chars: 3000,
                 chunk_overlap_chars: 300,
                 max_chunk_chars: 5000,
+                exclude_headings: Vec::new(),
                 remove_diacritics: true,
                 properties: PropertyIndexConfig::default(),
             },

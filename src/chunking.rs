@@ -7,6 +7,7 @@ use crate::models::{ChunkRecord, Heading};
 #[derive(Debug, Clone)]
 struct Block {
     heading_path: String,
+    heading_chain: Vec<String>,
     heading_level: Option<usize>,
     text: String,
     start_line: usize,
@@ -44,6 +45,7 @@ pub fn chunk_markdown_with_body_start_line(
     config: &IndexConfig,
 ) -> Vec<ChunkRecord> {
     let sections = sections_by_heading(body, body_start_line, headings);
+    let excluded_headings = ExcludedHeadings::new(&config.exclude_headings);
     let context = ChunkContext {
         note_path,
         title,
@@ -52,6 +54,9 @@ pub fn chunk_markdown_with_body_start_line(
     let mut chunks = Vec::new();
 
     for section in sections {
+        if excluded_headings.matches(&section) {
+            continue;
+        }
         if char_count(&section.text) <= config.max_chunk_chars {
             push_chunk(
                 &mut chunks,
@@ -77,6 +82,7 @@ fn sections_by_heading(body: &str, body_start_line: usize, headings: &[Heading])
     let mut current = String::new();
     let mut current_start = body_start_line;
     let mut current_heading = String::new();
+    let mut current_heading_chain = Vec::new();
     let mut current_level = None;
 
     for (line_index, line) in body.lines().enumerate() {
@@ -88,14 +94,19 @@ fn sections_by_heading(body: &str, body_start_line: usize, headings: &[Heading])
                 current_start,
                 line_no.saturating_sub(1),
                 &current_heading,
+                &current_heading_chain,
                 current_level,
             );
             let heading = &headings[heading_index];
             heading_stack.retain(|(level, _)| *level < heading.level);
             heading_stack.push((heading.level, heading.text.clone()));
-            current_heading = heading_stack
+            current_heading_chain = heading_stack
                 .iter()
-                .map(|(_, text)| text.as_str())
+                .map(|(_, text)| text.clone())
+                .collect::<Vec<_>>();
+            current_heading = current_heading_chain
+                .iter()
+                .map(String::as_str)
                 .collect::<Vec<_>>()
                 .join(" > ");
             current_level = Some(heading.level);
@@ -116,6 +127,7 @@ fn sections_by_heading(body: &str, body_start_line: usize, headings: &[Heading])
         current_start,
         final_line,
         &current_heading,
+        &current_heading_chain,
         current_level,
     );
     sections
@@ -191,6 +203,7 @@ fn paragraph_blocks(text: &str, start_line: usize, heading_path: &str) -> Vec<Bl
                 current_start,
                 line_no,
                 heading_path,
+                &[],
                 None,
             );
             current_start = line_no + 1;
@@ -209,6 +222,7 @@ fn paragraph_blocks(text: &str, start_line: usize, heading_path: &str) -> Vec<Bl
         current_start,
         final_line.max(start_line),
         heading_path,
+        &[],
         None,
     );
     blocks
@@ -220,12 +234,14 @@ fn flush_block(
     start_line: usize,
     end_line: usize,
     heading_path: &str,
+    heading_chain: &[String],
     heading_level: Option<usize>,
 ) {
     let text = current.trim();
     if !text.is_empty() {
         blocks.push(Block {
             heading_path: heading_path.to_string(),
+            heading_chain: heading_chain.to_vec(),
             heading_level,
             text: text.to_string(),
             start_line,
@@ -233,6 +249,50 @@ fn flush_block(
         });
     }
     current.clear();
+}
+
+struct ExcludedHeadings {
+    patterns: Vec<String>,
+}
+
+impl ExcludedHeadings {
+    fn new(values: &[String]) -> Self {
+        let patterns = values
+            .iter()
+            .map(|value| normalize_heading_match(value))
+            .filter(|value| !value.is_empty())
+            .collect();
+        Self { patterns }
+    }
+
+    fn matches(&self, section: &Block) -> bool {
+        if self.patterns.is_empty() || section.heading_path.is_empty() {
+            return false;
+        }
+        let path = normalize_heading_match(&section.heading_path);
+        let chain = section
+            .heading_chain
+            .iter()
+            .map(|heading| normalize_heading_match(heading))
+            .collect::<Vec<_>>();
+
+        self.patterns.iter().any(|pattern| {
+            let pattern = pattern.as_str();
+            path == pattern
+                || path
+                    .strip_prefix(pattern)
+                    .is_some_and(|suffix| suffix.starts_with(" > "))
+                || (!pattern.contains('>') && chain.iter().any(|heading| heading == pattern))
+        })
+    }
+}
+
+fn normalize_heading_match(value: &str) -> String {
+    value
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
 }
 
 fn push_chunk(
