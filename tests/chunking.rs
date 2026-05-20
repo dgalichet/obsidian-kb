@@ -86,6 +86,44 @@ fn excludes_configured_heading_sections_and_descendants() {
     );
 }
 
+#[test]
+fn excluding_headings_preserves_remaining_chunk_ids() {
+    let body = "# Main\n\nSemantic content.\n\n## Relations\n\n[[linked-note]] should not influence retrieval.\n\n### Backlinks\n\nMore link noise.\n\n## Details\n\nMore semantic content.";
+    let headings = markdown::extract_headings(body);
+    let unfiltered = chunking::chunk_markdown(
+        "filtered.md",
+        "Filtered",
+        &[],
+        body,
+        &headings,
+        &index_config(),
+    );
+    let filtered = chunking::chunk_markdown(
+        "filtered.md",
+        "Filtered",
+        &[],
+        body,
+        &headings,
+        &IndexConfig {
+            exclude_headings: vec!["Relations".to_string()],
+            ..index_config()
+        },
+    );
+
+    let unfiltered_details = unfiltered
+        .iter()
+        .find(|chunk| chunk.heading_path == "Main > Details")
+        .unwrap();
+    let filtered_details = filtered
+        .iter()
+        .find(|chunk| chunk.heading_path == "Main > Details")
+        .unwrap();
+
+    assert_eq!(filtered.len(), 2);
+    assert_eq!(filtered_details.ordinal, 1);
+    assert_eq!(filtered_details.chunk_id, unfiltered_details.chunk_id);
+}
+
 fn index_config() -> IndexConfig {
     IndexConfig {
         store_dir: PathBuf::from(".obsidian-kb"),
