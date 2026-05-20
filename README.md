@@ -1,5 +1,9 @@
 <p align="center">
-  <img src="assets/obsidian-kb-logo.png" alt="obsidian-kb logo" width="720">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/obsidian-kb-logo.png">
+    <source media="(prefers-color-scheme: light)" srcset="assets/obsidian-kb-logo-light.png">
+    <img src="assets/obsidian-kb-logo-light.png" alt="obsidian-kb logo" width="720">
+  </picture>
 </p>
 
 # obsidian-kb
