@@ -25,6 +25,7 @@ jobs:
 
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
+        continue-on-error: true
 
       - name: Check formatting
         run: cargo fmt --all --check
@@ -63,6 +64,7 @@ jobs:
 
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
+        continue-on-error: true
         with:
           key: ${{ matrix.target }}
 
