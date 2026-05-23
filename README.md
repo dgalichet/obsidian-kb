@@ -350,7 +350,12 @@ Recommended defaults:
 
 This keeps answers grounded while avoiding bulk reads of the whole vault.
 
-For a complete agent and MCP usage guide, see
+Ready-to-copy integration recipes are available in
+[docs/agent-recipes.md](docs/agent-recipes.md): Claude Desktop MCP,
+Codex/CLI agents, Cursor, Continue, shell scripts, and a reusable
+`search first, read second` system prompt.
+
+For the complete agent and MCP usage guide, see
 [USING_OBSIDIAN_KB_WITH_AGENTS.md](USING_OBSIDIAN_KB_WITH_AGENTS.md).
 
 ## Local Files
