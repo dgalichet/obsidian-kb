@@ -11,7 +11,8 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  rust:
+  rust-checks:
+    name: Rust checks
     runs-on: ubuntu-latest
 
     steps:
@@ -23,6 +24,7 @@ jobs:
 
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
+        continue-on-error: true
 
       - name: Check formatting
         run: cargo fmt --all --check
@@ -31,7 +33,7 @@ jobs:
         run: cargo clippy --all-targets --all-features -- -D warnings
 
       - name: Test
-        run: cargo test
+        run: cargo test --locked
 
       - name: Check package
         run: cargo package --no-verify

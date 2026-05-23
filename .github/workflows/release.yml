@@ -32,6 +32,10 @@ jobs:
         include:
           - target: aarch64-apple-darwin
             runner: macos-15
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+          - target: x86_64-pc-windows-msvc
+            runner: windows-latest
 
     steps:
       - name: Checkout
@@ -65,10 +69,20 @@ jobs:
           echo "Building obsidian-kb ${version} from ${RELEASE_TAG}."
 
       - name: Test
+        shell: bash
         run: cargo test --locked
 
       - name: Build release binary
-        run: cargo build --release --locked --target "${{ matrix.target }}"
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          target="${{ matrix.target }}"
+          if [[ "${target}" == "x86_64-unknown-linux-gnu" ]]; then
+            RUSTFLAGS='-C link-arg=-Wl,-rpath,$ORIGIN' cargo build --release --locked --target "${target}"
+          else
+            cargo build --release --locked --target "${target}"
+          fi
 
       - name: Package archive
         shell: bash
@@ -78,47 +92,99 @@ jobs:
           target="${{ matrix.target }}"
           package="${BIN_NAME}-${target}"
           staging="${RUNNER_TEMP}/${package}"
-          binary="target/${target}/release/${BIN_NAME}"
+          binary_ext=""
+          if [[ "${target}" == "x86_64-pc-windows-msvc" ]]; then
+            binary_ext=".exe"
+          fi
+          binary="target/${target}/release/${BIN_NAME}${binary_ext}"
+          staged_binary="${staging}/${BIN_NAME}${binary_ext}"
 
           mkdir -p "${staging}" dist
-          cp "${binary}" "${staging}/"
+          cp "${binary}" "${staged_binary}"
           cp README.md LICENSE-APACHE LICENSE-MIT "${staging}/"
 
-          # ONNX Runtime may be linked as a local dylib by the fastembed/ort stack.
-          # If that happens, keep only the libraries reported by otool next to the
-          # executable. Do not copy every dylib under target/, because proc-macro
-          # build artifacts also live there and are not runtime dependencies.
-          while IFS= read -r linked_lib; do
-            lib_name="$(basename "${linked_lib}")"
-            found_lib="$(find "target/${target}/release" -type f -name "${lib_name}" -print -quit)"
+          case "${target}" in
+            *-apple-darwin)
+              # ONNX Runtime may be linked as a local dylib by the fastembed/ort stack.
+              # If that happens, keep only the libraries reported by otool next to the
+              # executable. Do not copy every dylib under target/, because proc-macro
+              # build artifacts also live there and are not runtime dependencies.
+              while IFS= read -r linked_lib; do
+                lib_name="$(basename "${linked_lib}")"
+                found_lib="$(find "target/${target}/release" -type f -name "${lib_name}" -print -quit)"
 
-            if [[ -n "${found_lib}" ]]; then
-              cp -L "${found_lib}" "${staging}/"
+                if [[ -n "${found_lib}" ]]; then
+                  cp -L "${found_lib}" "${staging}/"
+                fi
+              done < <(
+                otool -L "${binary}" |
+                  awk 'NR > 1 { print $1 }' |
+                  grep -E '^(@rpath|@loader_path|@executable_path)/' || true
+              )
+
+              if find "${staging}" -maxdepth 1 -type f -name "*.dylib" | grep -q .; then
+                install_name_tool -add_rpath "@executable_path" "${staged_binary}" 2>/dev/null || true
+              fi
+
+              echo "Linked libraries:"
+              otool -L "${staged_binary}" || true
+              ;;
+            *-unknown-linux-gnu)
+              while IFS= read -r linked_lib; do
+                lib_name="$(basename "${linked_lib}")"
+                found_lib="$(find "target/${target}/release" -type f -name "${lib_name}" -print -quit)"
+
+                if [[ -n "${found_lib}" ]]; then
+                  cp -L "${found_lib}" "${staging}/"
+                fi
+              done < <(
+                ldd "${binary}" |
+                  awk '{ print $3 }' |
+                  grep -F "${GITHUB_WORKSPACE}/target/${target}/release" || true
+              )
+
+              while IFS= read -r runtime_lib; do
+                cp -L "${runtime_lib}" "${staging}/"
+              done < <(
+                find "target/${target}/release" -type f -name "libonnxruntime*.so*" -print
+              )
+
+              echo "Linked libraries:"
+              ldd "${staged_binary}" || true
+              ;;
+            *-pc-windows-msvc)
+              while IFS= read -r runtime_lib; do
+                cp -L "${runtime_lib}" "${staging}/"
+              done < <(
+                find "target/${target}/release" -type f -iname "onnxruntime*.dll" -print
+              )
+              ;;
+          esac
+
+          run_staged_binary() {
+            if [[ "${target}" == *-unknown-linux-gnu ]]; then
+              LD_LIBRARY_PATH="${staging}:${LD_LIBRARY_PATH:-}" "${staged_binary}" "$@"
+            else
+              "${staged_binary}" "$@"
             fi
-          done < <(
-            otool -L "${binary}" |
-              awk 'NR > 1 { print $1 }' |
-              grep -E '^(@rpath|@loader_path|@executable_path)/' || true
-          )
+          }
 
-          if find "${staging}" -maxdepth 1 -type f -name "*.dylib" | grep -q .; then
-            install_name_tool -add_rpath "@executable_path" "${staging}/${BIN_NAME}" 2>/dev/null || true
-          fi
-
-          echo "Linked libraries:"
-          otool -L "${staging}/${BIN_NAME}" || true
-
-          "${staging}/${BIN_NAME}" --help
-          "${staging}/${BIN_NAME}" version | grep -Fx "${BIN_NAME} ${OBSIDIAN_KB_VERSION}"
+          run_staged_binary --help
+          run_staged_binary version | grep -Fx "${BIN_NAME} ${OBSIDIAN_KB_VERSION}"
 
           smoke_vault="${RUNNER_TEMP}/sample_vault"
           cp -R tests/fixtures/sample_vault "${smoke_vault}"
-          "${staging}/${BIN_NAME}" init --vault "${smoke_vault}"
-          "${staging}/${BIN_NAME}" index --vault "${smoke_vault}" --no-embeddings
-          "${staging}/${BIN_NAME}" search "BM25" --vault "${smoke_vault}" --mode bm25 --top 1 --json
+          run_staged_binary init --vault "${smoke_vault}"
+          run_staged_binary index --vault "${smoke_vault}" --no-embeddings
+          run_staged_binary search "BM25" --vault "${smoke_vault}" --mode bm25 --top 1 --json
 
-          tar -C "${RUNNER_TEMP}" -czf "dist/${package}.tar.gz" "${package}"
-          shasum -a 256 "dist/${package}.tar.gz" > "dist/${package}.tar.gz.sha256"
+          archive="dist/${package}.tar.gz"
+          tar -C "${RUNNER_TEMP}" -czf "${archive}" "${package}"
+          if command -v shasum >/dev/null 2>&1; then
+            shasum -a 256 "${archive}" > "${archive}.sha256"
+          else
+            sha256sum "${archive}" > "${archive}.sha256"
+          fi
 
       - name: Upload release archive
         uses: actions/upload-artifact@v4
