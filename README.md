@@ -35,7 +35,9 @@ a fast local companion for retrieval.
 
 ## Install
 
-With Homebrew on macOS Apple Silicon:
+### macOS Apple Silicon
+
+With Homebrew:
 
 ```bash
 brew install dgalichet/tap/obsidian-kb
@@ -44,6 +46,69 @@ brew install dgalichet/tap/obsidian-kb
 Or download the matching macOS archive from the
 [latest GitHub Release](https://github.com/dgalichet/obsidian-kb/releases/latest)
 and put `obsidian-kb` on your `PATH`.
+
+### Linux x86_64
+
+Release archives for Linux are named by Rust target triple. Replace `vX.Y.Z`
+with a release tag that contains the Linux archive, then extract the whole
+directory and put a wrapper on your `PATH`:
+
+```bash
+version="vX.Y.Z"
+tmpdir="$(mktemp -d)"
+curl -L \
+  "https://github.com/dgalichet/obsidian-kb/releases/download/${version}/obsidian-kb-x86_64-unknown-linux-gnu.tar.gz" \
+  -o "${tmpdir}/obsidian-kb-linux-x86_64.tar.gz"
+
+sudo mkdir -p /opt/obsidian-kb
+sudo tar -xzf "${tmpdir}/obsidian-kb-linux-x86_64.tar.gz" \
+  -C /opt/obsidian-kb \
+  --strip-components=1
+sudo tee /usr/local/bin/obsidian-kb >/dev/null <<'EOF'
+#!/usr/bin/env sh
+exec /opt/obsidian-kb/obsidian-kb "$@"
+EOF
+sudo chmod +x /usr/local/bin/obsidian-kb
+
+obsidian-kb --help
+```
+
+Keep the extracted files together under `/opt/obsidian-kb`; the archive may
+include runtime libraries that must stay next to the executable.
+
+### Windows x86_64
+
+Release archives for Windows are named by Rust target triple. Replace `vX.Y.Z`
+with a release tag that contains the Windows archive. In PowerShell:
+
+```powershell
+$Version = "vX.Y.Z"
+$InstallDir = "$env:LOCALAPPDATA\Programs\obsidian-kb"
+$Archive = "$env:TEMP\obsidian-kb-windows-x86_64.tar.gz"
+
+Invoke-WebRequest `
+  -Uri "https://github.com/dgalichet/obsidian-kb/releases/download/$Version/obsidian-kb-x86_64-pc-windows-msvc.tar.gz" `
+  -OutFile $Archive
+
+New-Item -ItemType Directory -Force $InstallDir | Out-Null
+tar -xzf $Archive -C $InstallDir --strip-components 1
+
+$UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
+if ([string]::IsNullOrWhiteSpace($UserPath)) {
+  [Environment]::SetEnvironmentVariable("Path", $InstallDir, "User")
+} elseif (($UserPath -split ";") -notcontains $InstallDir) {
+  [Environment]::SetEnvironmentVariable("Path", "$UserPath;$InstallDir", "User")
+}
+$env:Path = "$env:Path;$InstallDir"
+
+obsidian-kb.exe --help
+```
+
+Open a new terminal if `obsidian-kb.exe` is not found after updating the user
+`PATH`. Keep the extracted files together in `$InstallDir`; the archive may
+include runtime DLLs that must stay next to the executable.
+
+### From Source
 
 For development from a Rust checkout:
 
