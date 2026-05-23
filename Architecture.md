@@ -217,6 +217,9 @@ include_query = false
 idle_unload_seconds = 600
 preload_embedder = false
 
+[serve]
+cors_allowed_origins = ["app://obsidian.md"]
+
 [doctor.unresolved_links]
 allow_forward_links = false
 ignore_targets = []
