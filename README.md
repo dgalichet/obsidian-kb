@@ -387,6 +387,19 @@ default and prints the chosen URL. Use `--port` to override the port. It exposes
 accepts MCP JSON-RPC over streamable HTTP and can return either JSON or
 `text/event-stream` responses.
 
+Browser CORS access is restricted to configured origins. The default is the
+Obsidian desktop origin:
+
+```toml
+[serve]
+cors_allowed_origins = ["app://obsidian.md"]
+```
+
+Requests without an `Origin` header, such as local CLI and native clients, are
+not blocked. To allow a local browser app, add its exact origin including the
+port, for example `http://127.0.0.1:3000`. Use `*` only when you intentionally
+want any browser page to read from the local service.
+
 ## What It Is Not
 
 `obsidian-kb` is intentionally small in scope:
