@@ -37,7 +37,7 @@ The useful behavior comes from selection, not volume.
 ## Copy-Paste Recipes
 
 For concrete client setup snippets, start with
-[docs/agent-recipes.md](docs/agent-recipes.md). It includes ready-to-copy
+[agent-recipes.md](agent-recipes.md). It includes ready-to-copy
 recipes for Claude Desktop MCP, Codex/CLI agents, Cursor, Continue, shell
 scripts, and a reusable `search first, read second` system prompt.
 

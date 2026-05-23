@@ -356,7 +356,7 @@ Codex/CLI agents, Cursor, Continue, shell scripts, and a reusable
 `search first, read second` system prompt.
 
 For the complete agent and MCP usage guide, see
-[USING_OBSIDIAN_KB_WITH_AGENTS.md](USING_OBSIDIAN_KB_WITH_AGENTS.md).
+[docs/using-obsidian-kb-with-agents.md](docs/using-obsidian-kb-with-agents.md).
 
 ## Local Files
 
@@ -418,7 +418,7 @@ want any browser page to read from the local service.
 - not an automatic note writer.
 
 For implementation details, design tradeoffs, configuration reference, and
-release notes, see [Architecture.md](Architecture.md).
+release notes, see [docs/architecture.md](docs/architecture.md).
 
 ## Privacy
 

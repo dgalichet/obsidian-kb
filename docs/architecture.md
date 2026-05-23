@@ -248,7 +248,7 @@ HTTP serve mode also report `vector_embeddings_cached` to distinguish cold
 SQLite loads from warm in-memory searches.
 
 Public vault-size benchmark methodology and results are maintained in
-[`docs/benchmarks.md`](docs/benchmarks.md).
+[`benchmarks.md`](benchmarks.md).
 
 `obsidian-kb mcp` runs a local MCP stdio server exposing `search`, `related`,
 `show`, `graph`, `tags`, `properties`, `stats`, `warmup`, `unload`, and `status`
