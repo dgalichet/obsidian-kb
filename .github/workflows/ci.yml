@@ -39,7 +39,6 @@ jobs:
   target-build:
     name: Build and test ${{ matrix.target }}
     runs-on: ${{ matrix.runner }}
-    continue-on-error: ${{ matrix.experimental }}
 
     strategy:
       fail-fast: false
@@ -47,16 +46,10 @@ jobs:
         include:
           - target: x86_64-unknown-linux-gnu
             runner: ubuntu-latest
-            experimental: false
           - target: aarch64-apple-darwin
             runner: macos-15
-            experimental: false
-          - target: x86_64-apple-darwin
-            runner: macos-15-intel
-            experimental: true
           - target: x86_64-pc-windows-msvc
             runner: windows-latest
-            experimental: false
 
     steps:
       - name: Checkout
