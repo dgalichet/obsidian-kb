@@ -216,7 +216,7 @@ fn chunk_blocks_for_section(section: &Block, config: &IndexConfig) -> Vec<Block>
 }
 
 fn split_long_section(section: &Block, config: &IndexConfig) -> Vec<Block> {
-    let blocks = paragraph_blocks(
+    let paragraph_blocks = paragraph_blocks(
         &section.text,
         section.start_line,
         &section.heading_path,
@@ -228,13 +228,16 @@ fn split_long_section(section: &Block, config: &IndexConfig) -> Vec<Block> {
     let mut current_start = section.start_line;
     let mut current_end = section.start_line;
 
-    for block in blocks {
+    for block in paragraph_blocks
+        .into_iter()
+        .flat_map(|block| split_oversized_block(block, config.max_chunk_chars))
+    {
         let current_chars = char_count(&current_text);
         let block_chars = char_count(&block.text);
-        let would_exceed_target =
-            current_chars > 0 && current_chars + block_chars > config.chunk_target_chars;
-        let would_exceed_max =
-            current_chars > 0 && current_chars + block_chars > config.max_chunk_chars;
+        let separator_chars = if current_text.trim().is_empty() { 0 } else { 2 };
+        let combined_chars = current_chars + separator_chars + block_chars;
+        let would_exceed_target = current_chars > 0 && combined_chars > config.chunk_target_chars;
+        let would_exceed_max = current_chars > 0 && combined_chars > config.max_chunk_chars;
 
         if would_exceed_target || would_exceed_max {
             push_split_block(
@@ -244,7 +247,12 @@ fn split_long_section(section: &Block, config: &IndexConfig) -> Vec<Block> {
                 current_start,
                 current_end,
             );
-            current_text = overlap_tail_chars(&current_text, config.chunk_overlap_chars);
+            let max_overlap_chars = config.max_chunk_chars.saturating_sub(block_chars);
+            let max_overlap_chars = max_overlap_chars.saturating_sub(2);
+            current_text = overlap_tail_chars(
+                &current_text,
+                config.chunk_overlap_chars.min(max_overlap_chars),
+            );
             current_start = block.start_line;
         }
 
@@ -263,6 +271,145 @@ fn split_long_section(section: &Block, config: &IndexConfig) -> Vec<Block> {
         current_end,
     );
     chunks
+}
+
+fn split_oversized_block(block: Block, max_chunk_chars: usize) -> Vec<Block> {
+    if max_chunk_chars == 0 || char_count(&block.text) <= max_chunk_chars {
+        return vec![block];
+    }
+
+    let mut chunks = Vec::new();
+    let mut current_text = String::new();
+    let mut current_start = block.start_line;
+    let mut current_end = block.start_line;
+
+    for (offset, line) in block.text.lines().enumerate() {
+        let line_no = block.start_line + offset;
+        let line_chars = char_count(line);
+
+        if line_chars > max_chunk_chars {
+            push_oversized_block_piece(
+                &mut chunks,
+                &block,
+                &current_text,
+                current_start,
+                current_end,
+            );
+            current_text.clear();
+
+            for piece in split_long_line(line, max_chunk_chars) {
+                push_oversized_block_piece(&mut chunks, &block, &piece, line_no, line_no);
+            }
+            current_start = line_no + 1;
+            current_end = line_no + 1;
+            continue;
+        }
+
+        let separator_chars = usize::from(!current_text.is_empty());
+        if !current_text.is_empty()
+            && char_count(&current_text) + separator_chars + line_chars > max_chunk_chars
+        {
+            push_oversized_block_piece(
+                &mut chunks,
+                &block,
+                &current_text,
+                current_start,
+                current_end,
+            );
+            current_text.clear();
+            current_start = line_no;
+        }
+
+        if !current_text.is_empty() {
+            current_text.push('\n');
+        } else {
+            current_start = line_no;
+        }
+        current_text.push_str(line);
+        current_end = line_no;
+    }
+
+    push_oversized_block_piece(
+        &mut chunks,
+        &block,
+        &current_text,
+        current_start,
+        current_end,
+    );
+    chunks
+}
+
+fn split_long_line(line: &str, max_chunk_chars: usize) -> Vec<String> {
+    if max_chunk_chars == 0 || char_count(line) <= max_chunk_chars {
+        return vec![line.to_string()];
+    }
+
+    let mut pieces = Vec::new();
+    let mut remaining = line.trim();
+
+    while char_count(remaining) > max_chunk_chars {
+        let split_at = preferred_split_byte(remaining, max_chunk_chars);
+        let (left, right) = remaining.split_at(split_at);
+        let left = left.trim();
+        if !left.is_empty() {
+            pieces.push(left.to_string());
+        }
+        remaining = right.trim_start();
+    }
+
+    let remaining = remaining.trim();
+    if !remaining.is_empty() {
+        pieces.push(remaining.to_string());
+    }
+    pieces
+}
+
+fn preferred_split_byte(value: &str, max_chunk_chars: usize) -> usize {
+    let hard_cut = byte_index_after_chars(value, max_chunk_chars);
+    let min_preferred_chars = max_chunk_chars.saturating_div(2);
+    let mut last_whitespace = None;
+
+    for (char_index, (byte_index, ch)) in value.char_indices().enumerate() {
+        if byte_index >= hard_cut {
+            break;
+        }
+        if ch.is_whitespace() && char_index >= min_preferred_chars {
+            last_whitespace = Some(byte_index);
+        }
+    }
+
+    last_whitespace.unwrap_or(hard_cut)
+}
+
+fn byte_index_after_chars(value: &str, chars: usize) -> usize {
+    value
+        .char_indices()
+        .nth(chars)
+        .map(|(index, _)| index)
+        .unwrap_or(value.len())
+}
+
+fn push_oversized_block_piece(
+    chunks: &mut Vec<Block>,
+    source: &Block,
+    text: &str,
+    start_line: usize,
+    end_line: usize,
+) {
+    let text = text.trim();
+    if text.is_empty() {
+        return;
+    }
+    chunks.push(Block {
+        heading_path: source.heading_path.clone(),
+        heading_chain: source.heading_chain.clone(),
+        heading_level: source.heading_level,
+        text: text.to_string(),
+        start_line,
+        end_line: end_line.max(start_line),
+        start_page: source.start_page,
+        end_page: source.end_page,
+    });
 }
 
 fn push_split_block(

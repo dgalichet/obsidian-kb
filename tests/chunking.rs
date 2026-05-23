@@ -2,6 +2,7 @@ use obsidian_kb::{
     chunking,
     config::{IndexConfig, PdfIndexConfig, PropertyIndexConfig},
     markdown,
+    models::DocumentKind,
 };
 use std::path::PathBuf;
 
@@ -53,6 +54,102 @@ fn splits_long_heading_sections_by_paragraphs() {
     assert!(chunks.iter().all(|chunk| chunk.heading_path == "Long"));
     assert!(chunks.iter().all(|chunk| chunk.heading_level == Some(1)));
     assert!(chunks.iter().any(|chunk| chunk.text.contains("```rust")));
+}
+
+#[test]
+fn splits_single_paragraph_that_exceeds_max_chunk_chars() {
+    let paragraph = (0..80)
+        .map(|index| format!("word{index:02}"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let body = format!("# Long\n\n{paragraph}");
+    let headings = markdown::extract_headings(&body);
+    let chunks = chunking::chunk_markdown(
+        "long-paragraph.md",
+        "Long Paragraph",
+        &[],
+        &body,
+        &headings,
+        &IndexConfig {
+            chunk_target_chars: 160,
+            chunk_overlap_chars: 25,
+            max_chunk_chars: 180,
+            ..index_config()
+        },
+    );
+
+    assert!(chunks.len() > 1);
+    assert_chunks_within_max(&chunks, 180);
+    assert!(chunks.iter().all(|chunk| chunk.heading_path == "Long"));
+    assert!(chunks.iter().any(|chunk| chunk.text.contains("word00")));
+    assert!(chunks.iter().any(|chunk| chunk.text.contains("word79")));
+}
+
+#[test]
+fn splits_unbroken_long_token_that_exceeds_max_chunk_chars() {
+    let token = "x".repeat(350);
+    let chunks = chunking::chunk_markdown(
+        "token.md",
+        "Token",
+        &[],
+        &token,
+        &[],
+        &IndexConfig {
+            chunk_target_chars: 64,
+            max_chunk_chars: 64,
+            ..index_config()
+        },
+    );
+
+    assert!(chunks.len() > 1);
+    assert_chunks_within_max(&chunks, 64);
+    assert_eq!(
+        chunks
+            .iter()
+            .map(|chunk| chunk.text.as_str())
+            .collect::<Vec<_>>()
+            .join(""),
+        token
+    );
+}
+
+#[test]
+fn splits_long_text_section_and_preserves_page_metadata() {
+    let text = (0..90)
+        .map(|index| format!("pageword{index:02}"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let sections = vec![chunking::TextSection {
+        heading_path: "Page 7".to_string(),
+        heading_level: Some(1),
+        text,
+        start_line: 7,
+        end_line: 7,
+        start_page: Some(7),
+        end_page: Some(7),
+    }];
+    let chunks = chunking::chunk_text_sections(
+        "paper.pdf",
+        DocumentKind::Pdf,
+        "Paper",
+        &[],
+        &sections,
+        &IndexConfig {
+            chunk_target_chars: 140,
+            max_chunk_chars: 150,
+            ..index_config()
+        },
+    );
+
+    assert!(chunks.len() > 1);
+    assert_chunks_within_max(&chunks, 150);
+    assert!(chunks.iter().all(|chunk| {
+        chunk.document_kind == DocumentKind::Pdf
+            && chunk.heading_path == "Page 7"
+            && chunk.heading_level == Some(1)
+            && chunk.start_page == Some(7)
+            && chunk.end_page == Some(7)
+    }));
 }
 
 #[test]
@@ -122,6 +219,17 @@ fn excluding_headings_preserves_remaining_chunk_ids() {
     assert_eq!(filtered.len(), 2);
     assert_eq!(filtered_details.ordinal, 1);
     assert_eq!(filtered_details.chunk_id, unfiltered_details.chunk_id);
+}
+
+fn assert_chunks_within_max(chunks: &[obsidian_kb::models::ChunkRecord], max_chars: usize) {
+    for chunk in chunks {
+        let chars = chunk.text.chars().count();
+        assert!(
+            chars <= max_chars,
+            "chunk has {chars} chars, expected at most {max_chars}: {}",
+            chunk.text
+        );
+    }
 }
 
 fn index_config() -> IndexConfig {
