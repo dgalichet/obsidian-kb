@@ -266,6 +266,9 @@ MCP mode exposes these tools:
 For local HTTP clients, `obsidian-kb serve` exposes the same retrieval surface
 plus a streamable HTTP MCP endpoint at `POST /mcp`. It binds to
 `127.0.0.1:27124` by default; use `--port` to override the port.
+Browser CORS access is limited to `[serve].cors_allowed_origins`, which defaults
+to the Obsidian desktop origin `app://obsidian.md`. Add exact local browser
+origins, including port, only when those clients need access.
 
 For exact one-off lookups, the CLI is usually enough:
 

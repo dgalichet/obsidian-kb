@@ -18,6 +18,8 @@ pub struct AppConfig {
     #[serde(default)]
     pub mcp: McpConfig,
     #[serde(default)]
+    pub serve: ServeConfig,
+    #[serde(default)]
     pub doctor: DoctorConfig,
     #[serde(skip)]
     pub config_dir: PathBuf,
@@ -143,6 +145,20 @@ impl Default for McpConfig {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServeConfig {
+    #[serde(default = "default_cors_allowed_origins")]
+    pub cors_allowed_origins: Vec<String>,
+}
+
+impl Default for ServeConfig {
+    fn default() -> Self {
+        Self {
+            cors_allowed_origins: default_cors_allowed_origins(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct DoctorConfig {
     #[serde(default)]
@@ -223,6 +239,7 @@ impl AppConfig {
             },
             benchmark: BenchmarkConfig::default(),
             mcp: McpConfig::default(),
+            serve: ServeConfig::default(),
             doctor: DoctorConfig::default(),
             config_dir: config_dir.to_path_buf(),
         })
@@ -328,6 +345,10 @@ fn default_property_max_value_chars() -> usize {
 
 fn default_pdf_max_file_size_mb() -> usize {
     50
+}
+
+fn default_cors_allowed_origins() -> Vec<String> {
+    vec!["app://obsidian.md".to_string()]
 }
 
 pub fn save_config(config: &AppConfig) -> Result<()> {

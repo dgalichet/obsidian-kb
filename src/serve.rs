@@ -78,45 +78,97 @@ fn handle_connection(server: &mut McpServer, stream: &mut TcpStream) -> HttpResp
 fn route_request(server: &mut McpServer, request: HttpRequest) -> HttpResponse {
     server.unload_idle_vector_cache();
     let path = request.target_path();
-    if request.method == "OPTIONS" {
-        return HttpResponse::empty(204);
-    }
+    let cors_origin = match cors_origin(server.config(), &request) {
+        Ok(origin) => origin,
+        Err(response) => return response,
+    };
 
-    match (request.method.as_str(), path) {
-        ("GET", "/health") => HttpResponse::json(
-            200,
-            json!({
-                "ok": true,
-                "version": crate::version::version()
-            }),
-        ),
-        ("GET", "/status") => HttpResponse::json(200, status_json(server)),
-        ("POST", "/search") => route_json_body(&request, |body| server.tool_search(&body)),
-        ("POST", "/show") => route_json_body(&request, |body| server.tool_show(&body)),
-        ("POST", "/graph") => route_json_body(&request, |body| server.tool_graph(&body)),
-        ("POST", "/index/refresh") => route_index_refresh(server, &request),
-        ("POST", "/shutdown") => {
-            let mut response = HttpResponse::json(200, json!({ "shutting_down": true }));
-            response.shutdown = true;
-            response
-        }
-        ("POST", "/mcp") => route_mcp(server, &request),
-        _ if matches!(path, "/health" | "/status") => HttpResponse::json_error(
-            405,
-            format!("method {} is not allowed for {path}", request.method),
-        ),
-        _ if matches!(
-            path,
-            "/search" | "/show" | "/graph" | "/index/refresh" | "/shutdown" | "/mcp"
-        ) =>
-        {
-            HttpResponse::json_error(
+    let mut response = if request.method == "OPTIONS" {
+        HttpResponse::empty(204)
+    } else {
+        match (request.method.as_str(), path) {
+            ("GET", "/health") => HttpResponse::json(
+                200,
+                json!({
+                    "ok": true,
+                    "version": crate::version::version()
+                }),
+            ),
+            ("GET", "/status") => HttpResponse::json(200, status_json(server)),
+            ("POST", "/search") => route_json_body(&request, |body| server.tool_search(&body)),
+            ("POST", "/show") => route_json_body(&request, |body| server.tool_show(&body)),
+            ("POST", "/graph") => route_json_body(&request, |body| server.tool_graph(&body)),
+            ("POST", "/index/refresh") => route_index_refresh(server, &request),
+            ("POST", "/shutdown") => {
+                let mut response = HttpResponse::json(200, json!({ "shutting_down": true }));
+                response.shutdown = true;
+                response
+            }
+            ("POST", "/mcp") => route_mcp(server, &request),
+            _ if matches!(path, "/health" | "/status") => HttpResponse::json_error(
                 405,
                 format!("method {} is not allowed for {path}", request.method),
-            )
+            ),
+            _ if matches!(
+                path,
+                "/search" | "/show" | "/graph" | "/index/refresh" | "/shutdown" | "/mcp"
+            ) =>
+            {
+                HttpResponse::json_error(
+                    405,
+                    format!("method {} is not allowed for {path}", request.method),
+                )
+            }
+            _ => HttpResponse::json_error(404, format!("unknown endpoint `{path}`")),
         }
-        _ => HttpResponse::json_error(404, format!("unknown endpoint `{path}`")),
+    };
+
+    add_cors_headers(&mut response, cors_origin);
+    response
+}
+
+fn cors_origin(
+    config: &AppConfig,
+    request: &HttpRequest,
+) -> std::result::Result<Option<String>, HttpResponse> {
+    let Some(origin) = request.headers.get("origin") else {
+        return Ok(None);
+    };
+    allowed_cors_origin(&config.serve.cors_allowed_origins, origin)
+        .map(Some)
+        .ok_or_else(|| HttpResponse::json_error(403, format!("origin `{origin}` is not allowed")))
+}
+
+fn allowed_cors_origin(allowed_origins: &[String], origin: &str) -> Option<String> {
+    let mut allow_any = false;
+    for allowed_origin in allowed_origins {
+        let allowed_origin = allowed_origin.trim();
+        if allowed_origin == "*" {
+            allow_any = true;
+        } else if allowed_origin == origin {
+            return Some(origin.to_string());
+        }
     }
+    allow_any.then(|| "*".to_string())
+}
+
+fn add_cors_headers(response: &mut HttpResponse, origin: Option<String>) {
+    let Some(origin) = origin else {
+        return;
+    };
+
+    response
+        .extra_headers
+        .push(("Access-Control-Allow-Origin", origin));
+    response.extra_headers.push(("Vary", "Origin".to_string()));
+    response.extra_headers.push((
+        "Access-Control-Allow-Headers",
+        "content-type, accept, mcp-protocol-version".to_string(),
+    ));
+    response.extra_headers.push((
+        "Access-Control-Allow-Methods",
+        "GET, POST, OPTIONS".to_string(),
+    ));
 }
 
 fn route_json_body(
@@ -385,15 +437,6 @@ fn write_http_response(stream: &mut TcpStream, response: HttpResponse) -> Result
     }
     write!(stream, "Content-Length: {}\r\n", response.body.len())?;
     write!(stream, "Connection: close\r\n")?;
-    write!(stream, "Access-Control-Allow-Origin: *\r\n")?;
-    write!(
-        stream,
-        "Access-Control-Allow-Headers: content-type, accept, mcp-protocol-version\r\n"
-    )?;
-    write!(
-        stream,
-        "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
-    )?;
     for (name, value) in response.extra_headers {
         write!(stream, "{name}: {value}\r\n")?;
     }
@@ -423,6 +466,7 @@ fn reason_phrase(status: u16) -> &'static str {
         202 => "Accepted",
         204 => "No Content",
         400 => "Bad Request",
+        403 => "Forbidden",
         404 => "Not Found",
         405 => "Method Not Allowed",
         500 => "Internal Server Error",
@@ -527,6 +571,42 @@ mod tests {
     }
 
     #[test]
+    fn cors_allows_configured_obsidian_origin() {
+        let (_temp, config) = indexed_test_config();
+        let mut server = McpServer::new(config);
+
+        let health = route_request(
+            &mut server,
+            request_with_origin("GET", "/health", None, "app://obsidian.md"),
+        );
+
+        assert_eq!(health.status, 200);
+        assert_eq!(
+            response_header(&health, "Access-Control-Allow-Origin"),
+            Some("app://obsidian.md")
+        );
+        assert_eq!(response_header(&health, "Vary"), Some("Origin"));
+    }
+
+    #[test]
+    fn cors_rejects_unconfigured_browser_origins_before_side_effects() {
+        let (_temp, config) = indexed_test_config();
+        let mut server = McpServer::new(config);
+
+        let shutdown = route_request(
+            &mut server,
+            request_with_origin("POST", "/shutdown", None, "https://example.com"),
+        );
+
+        assert_eq!(shutdown.status, 403);
+        assert!(!shutdown.shutdown);
+        assert_eq!(
+            response_header(&shutdown, "Access-Control-Allow-Origin"),
+            None
+        );
+    }
+
+    #[test]
     fn client_disconnect_write_errors_do_not_stop_server() {
         assert!(is_client_disconnect(
             &std::io::Error::from(std::io::ErrorKind::BrokenPipe).into()
@@ -550,8 +630,29 @@ mod tests {
         }
     }
 
+    fn request_with_origin(
+        method: &str,
+        target: &str,
+        body: Option<Value>,
+        origin: &str,
+    ) -> HttpRequest {
+        let mut request = request(method, target, body);
+        request
+            .headers
+            .insert("origin".to_string(), origin.to_string());
+        request
+    }
+
     fn json_response(response: &HttpResponse) -> Value {
         serde_json::from_slice(&response.body).unwrap()
+    }
+
+    fn response_header<'a>(response: &'a HttpResponse, name: &str) -> Option<&'a str> {
+        response
+            .extra_headers
+            .iter()
+            .find(|(header_name, _value)| *header_name == name)
+            .map(|(_header_name, value)| value.as_str())
     }
 
     fn indexed_test_config() -> (TempDir, AppConfig) {

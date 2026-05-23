@@ -256,6 +256,11 @@ clients such as future Obsidian plugins. By default it binds to
 `GET /status`, `POST /search`, `POST /show`, `POST /graph`,
 `POST /index/refresh`, `POST /shutdown`, and `POST /mcp`; `/mcp` accepts MCP
 JSON-RPC over streamable HTTP and can answer as JSON or server-sent events.
+Browser CORS access is exact-origin checked against
+`serve.cors_allowed_origins`, which defaults to `["app://obsidian.md"]` for the
+Obsidian desktop app. Requests without an `Origin` header are accepted for
+local native clients. Local browser clients must be configured with their full
+origin, including port.
 
 Config resolution order:
 
