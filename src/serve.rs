@@ -95,7 +95,7 @@ fn route_request(server: &mut McpServer, request: HttpRequest) -> HttpResponse {
                 }),
             ),
             ("GET", "/status") => HttpResponse::json(200, status_json(server)),
-            ("POST", "/search") => route_json_body(&request, |body| server.tool_search(&body)),
+            ("POST", "/search") => route_json_body(&request, |body| server.tool_search_http(&body)),
             ("POST", "/show") => route_json_body(&request, |body| server.tool_show(&body)),
             ("POST", "/graph") => route_json_body(&request, |body| server.tool_graph(&body)),
             ("POST", "/index/refresh") => route_index_refresh(server, &request),
@@ -217,7 +217,7 @@ fn route_mcp(server: &mut McpServer, request: &HttpRequest) -> HttpResponse {
             return HttpResponse::json_error(400, format!("request body is not UTF-8: {error}"));
         }
     };
-    let Some(response) = server.handle_message(body) else {
+    let Some(response) = server.handle_http_message(body) else {
         let mut response = HttpResponse::empty(202);
         response
             .extra_headers
@@ -540,6 +540,60 @@ mod tests {
         let shutdown = route_request(&mut server, request("POST", "/shutdown", None));
         assert_eq!(shutdown.status, 200);
         assert!(shutdown.shutdown);
+    }
+
+    #[test]
+    fn http_search_benchmark_records_http_transport() {
+        let (_temp, mut config) = indexed_test_config();
+        config.benchmark.enabled = true;
+        let log_path = config.benchmark_log_path();
+        let mut server = McpServer::new(config);
+
+        let search = route_request(
+            &mut server,
+            request(
+                "POST",
+                "/search",
+                Some(json!({ "query": "Alpha", "mode": "bm25", "top": 1 })),
+            ),
+        );
+
+        assert_eq!(search.status, 200);
+        let content = std::fs::read_to_string(log_path).unwrap();
+        let record: Value = serde_json::from_str(content.lines().last().unwrap()).unwrap();
+        assert_eq!(record["command"], "http_search");
+        assert_eq!(record["transport"], "http_rest");
+    }
+
+    #[test]
+    fn streamable_mcp_search_benchmark_records_http_transport() {
+        let (_temp, mut config) = indexed_test_config();
+        config.benchmark.enabled = true;
+        let log_path = config.benchmark_log_path();
+        let mut server = McpServer::new(config);
+
+        let response = route_request(
+            &mut server,
+            request(
+                "POST",
+                "/mcp",
+                Some(json!({
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "search",
+                        "arguments": { "query": "Alpha", "mode": "bm25", "top": 1 }
+                    }
+                })),
+            ),
+        );
+
+        assert_eq!(response.status, 200);
+        let content = std::fs::read_to_string(log_path).unwrap();
+        let record: Value = serde_json::from_str(content.lines().last().unwrap()).unwrap();
+        assert_eq!(record["command"], "mcp_search");
+        assert_eq!(record["transport"], "mcp_http");
     }
 
     #[test]

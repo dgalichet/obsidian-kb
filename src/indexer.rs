@@ -60,6 +60,13 @@ pub fn refresh_with_benchmark(
             vector_search::rebuild_embeddings(&db, config)
         })?
     };
+    if let Some(benchmark) = benchmark {
+        benchmark.set_field("notes", stats.notes);
+        benchmark.set_field("chunks", stats.chunks);
+        benchmark.set_field("links", stats.links);
+        benchmark.set_field("graph_warnings", graph_report.warnings.len());
+        benchmark.set_field("embeddings_rebuilt", embeddings);
+    }
 
     Ok(IndexOutcome {
         stats,

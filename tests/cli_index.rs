@@ -98,6 +98,8 @@ fn index_writes_benchmark_jsonl_when_enabled() {
     assert_eq!(record["command"], "index");
     assert_eq!(record["status"], "ok");
     assert_eq!(record["no_embeddings"], true);
+    assert!(record["chunks"].as_u64().unwrap() > 0);
+    assert_eq!(record["embeddings_rebuilt"], 0);
     assert!(record["total_ms"].as_f64().unwrap() >= 0.0);
     assert!(record["phases"]["load_vault_ms"].as_f64().unwrap() >= 0.0);
     assert!(record["phases"]["sqlite_replace_ms"].as_f64().unwrap() >= 0.0);

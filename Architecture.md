@@ -228,6 +228,10 @@ command to `log_path`. Records include total elapsed time, command metadata, and
 phase timings such as BM25 search, vector search, graph expansion, SQLite writes,
 Tantivy rebuilds, and embedding rebuilds. Search queries are not written unless
 `include_query = true`.
+Index records include the resulting note, chunk, link, graph-warning, and
+rebuilt-embedding counts. Search records identify the caller as CLI `search`,
+HTTP REST `http_search`, or MCP `mcp_search`, and MCP/HTTP records include a
+`transport` field such as `http_rest`, `mcp_http`, or `mcp_stdio`.
 
 Vector search records `vector_ms` as the total vector phase and also breaks it
 down into embedder initialization, query embedding, stored embedding loading, and
@@ -239,6 +243,9 @@ result count, `related_source_ms`, `vector_ms`,
 `related_load_source_embeddings_ms`, and `related_aggregate_notes_ms`. MCP and
 HTTP serve mode also report `vector_embeddings_cached` to distinguish cold
 SQLite loads from warm in-memory searches.
+
+Public vault-size benchmark methodology and results are maintained in
+[`docs/benchmarks.md`](docs/benchmarks.md).
 
 `obsidian-kb mcp` runs a local MCP stdio server exposing `search`, `related`,
 `show`, `graph`, `tags`, `properties`, `stats`, `warmup`, `unload`, and `status`
