@@ -78,6 +78,7 @@ pub fn run(mut config: AppConfig, args: McpArgs) -> Result<()> {
 
 pub(crate) struct McpServer {
     config: AppConfig,
+    transport: &'static str,
     vector_cache: VectorSearchCache,
 }
 
@@ -85,6 +86,7 @@ impl McpServer {
     pub(crate) fn new(config: AppConfig) -> Self {
         Self {
             config,
+            transport: "mcp_stdio",
             vector_cache: VectorSearchCache::default(),
         }
     }
@@ -135,6 +137,14 @@ impl McpServer {
         };
         self.handle_value(&parsed)
             .map(|response| response.to_string())
+    }
+
+    pub(crate) fn handle_http_message(&mut self, message: &str) -> Option<String> {
+        let previous = self.transport;
+        self.transport = "mcp_http";
+        let response = self.handle_message(message);
+        self.transport = previous;
+        response
     }
 
     pub(crate) fn handle_value(&mut self, parsed: &Value) -> Option<Value> {
@@ -243,6 +253,19 @@ impl McpServer {
     }
 
     pub(crate) fn tool_search(&mut self, arguments: &Value) -> Result<Value> {
+        self.tool_search_with_benchmark(arguments, "mcp_search", self.transport)
+    }
+
+    pub(crate) fn tool_search_http(&mut self, arguments: &Value) -> Result<Value> {
+        self.tool_search_with_benchmark(arguments, "http_search", "http_rest")
+    }
+
+    fn tool_search_with_benchmark(
+        &mut self,
+        arguments: &Value,
+        command: &'static str,
+        transport: &'static str,
+    ) -> Result<Value> {
         let query = optional_string_arg(arguments, "query").unwrap_or("");
         let mode = optional_string_arg(arguments, "mode")
             .and_then(SearchMode::from_config_value)
@@ -274,8 +297,9 @@ impl McpServer {
         let vector_cache = &mut self.vector_cache;
         let hits = benchmark::measure(
             &config,
-            "mcp_search",
+            command,
             |benchmark| {
+                benchmark.set_field("transport", transport);
                 benchmark.set_field("mode", search_mode_name(mode));
                 benchmark.set_field("top", top);
                 benchmark.set_field("expand_graph", expand_graph);
@@ -316,11 +340,13 @@ impl McpServer {
         let top = usize_arg(arguments, "top", 10)?;
         let candidates = usize_arg(arguments, "candidates", 0)?;
         let config = self.config.clone();
+        let transport = self.transport;
         let vector_cache = &mut self.vector_cache;
         let report = benchmark::measure(
             &config,
             "mcp_related",
             |benchmark| {
+                benchmark.set_field("transport", transport);
                 benchmark.set_field("top", top);
                 benchmark.set_field("candidates", candidates);
                 match &input {

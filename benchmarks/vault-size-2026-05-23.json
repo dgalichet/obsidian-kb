@@ -1,0 +1,265 @@
+{
+  "name": "Synthetic vault size benchmark",
+  "date": "2026-05-23",
+  "obsidian_kb_version": "0.0.0-snapshot",
+  "platform": "Darwin 25.5.0 arm64",
+  "runner": "tools/benchmark_vault_sizes.sh --chunks 1000,10000,50000 --runs 2 --workdir /private/tmp/obsidian-kb-bench-public --no-build",
+  "methodology": {
+    "vault": "Synthetic Markdown vaults with deterministic generated sections.",
+    "embeddings": "Deterministic synthetic 384-dimensional embeddings seeded with examples/seed_synthetic_embeddings.rs.",
+    "indexing": "index --rebuild --no-embeddings, followed by synthetic embedding seeding.",
+    "search_query": "synthetic local retrieval graph benchmark memory agent",
+    "search_mode": "hybrid",
+    "graph_expansion": true,
+    "top": 8,
+    "transports": {
+      "cli": "obsidian-kb search; every run is process-cold for the vector model and decoded embedding cache.",
+      "http_rest": "obsidian-kb serve POST /search; first run cold, second run warm in the same process.",
+      "mcp_http": "obsidian-kb serve POST /mcp JSON-RPC tools/call search; first run cold, second run warm in the same process."
+    }
+  },
+  "index": [
+    {
+      "chunks": 1000,
+      "total_ms": 240.948917,
+      "load_vault_ms": 7.965209,
+      "sqlite_replace_ms": 6.774667,
+      "tantivy_rebuild_ms": 210.648625,
+      "load_chunks_ms": 1.814958
+    },
+    {
+      "chunks": 10000,
+      "total_ms": 438.424041,
+      "load_vault_ms": 51.275583,
+      "sqlite_replace_ms": 62.851583,
+      "tantivy_rebuild_ms": 279.445834,
+      "load_chunks_ms": 29.094375
+    },
+    {
+      "chunks": 50000,
+      "total_ms": 1741.468083,
+      "load_vault_ms": 230.632208,
+      "sqlite_replace_ms": 393.625458,
+      "tantivy_rebuild_ms": 904.515666,
+      "load_chunks_ms": 170.0765
+    }
+  ],
+  "search": [
+    {
+      "chunks": 1000,
+      "command": "search",
+      "transport": "cli",
+      "run": 1,
+      "cache": "process_cold",
+      "total_ms": 946.629167,
+      "vector_embedder_init_ms": 871.075667,
+      "vector_load_embeddings_ms": 1.129375,
+      "vector_decode_embeddings_ms": 0.065625,
+      "vector_score_embeddings_ms": 0.278417
+    },
+    {
+      "chunks": 1000,
+      "command": "search",
+      "transport": "cli",
+      "run": 2,
+      "cache": "process_cold",
+      "total_ms": 888.740583,
+      "vector_embedder_init_ms": 813.374792,
+      "vector_load_embeddings_ms": 1.125583,
+      "vector_decode_embeddings_ms": 0.18175,
+      "vector_score_embeddings_ms": 0.223042
+    },
+    {
+      "chunks": 1000,
+      "command": "http_search",
+      "transport": "http_rest",
+      "run": 1,
+      "cache": "cold",
+      "total_ms": 879.49775,
+      "vector_embedder_init_ms": 862.671333,
+      "vector_load_embeddings_ms": 1.07175,
+      "vector_decode_embeddings_ms": 0.063375,
+      "vector_score_embeddings_ms": 0.188625
+    },
+    {
+      "chunks": 1000,
+      "command": "http_search",
+      "transport": "http_rest",
+      "run": 2,
+      "cache": "warm",
+      "total_ms": 20.679917,
+      "vector_embedder_init_ms": 0.0,
+      "vector_load_embeddings_ms": 0.0,
+      "vector_decode_embeddings_ms": 0.0,
+      "vector_score_embeddings_ms": 0.226917
+    },
+    {
+      "chunks": 1000,
+      "command": "mcp_search",
+      "transport": "mcp_http",
+      "run": 1,
+      "cache": "cold",
+      "total_ms": 939.639875,
+      "vector_embedder_init_ms": 918.795958,
+      "vector_load_embeddings_ms": 1.368708,
+      "vector_decode_embeddings_ms": 0.0825,
+      "vector_score_embeddings_ms": 0.196083
+    },
+    {
+      "chunks": 1000,
+      "command": "mcp_search",
+      "transport": "mcp_http",
+      "run": 2,
+      "cache": "warm",
+      "total_ms": 20.722833,
+      "vector_embedder_init_ms": 0.0,
+      "vector_load_embeddings_ms": 0.0,
+      "vector_decode_embeddings_ms": 0.0,
+      "vector_score_embeddings_ms": 0.348291
+    },
+    {
+      "chunks": 10000,
+      "command": "search",
+      "transport": "cli",
+      "run": 1,
+      "cache": "process_cold",
+      "total_ms": 893.790958,
+      "vector_embedder_init_ms": 807.01,
+      "vector_load_embeddings_ms": 8.844917,
+      "vector_decode_embeddings_ms": 0.840125,
+      "vector_score_embeddings_ms": 1.100083
+    },
+    {
+      "chunks": 10000,
+      "command": "search",
+      "transport": "cli",
+      "run": 2,
+      "cache": "process_cold",
+      "total_ms": 941.906542,
+      "vector_embedder_init_ms": 852.297625,
+      "vector_load_embeddings_ms": 9.58025,
+      "vector_decode_embeddings_ms": 0.868,
+      "vector_score_embeddings_ms": 5.350084
+    },
+    {
+      "chunks": 10000,
+      "command": "http_search",
+      "transport": "http_rest",
+      "run": 1,
+      "cache": "cold",
+      "total_ms": 845.8275,
+      "vector_embedder_init_ms": 810.947,
+      "vector_load_embeddings_ms": 8.189584,
+      "vector_decode_embeddings_ms": 1.127458,
+      "vector_score_embeddings_ms": 4.232667
+    },
+    {
+      "chunks": 10000,
+      "command": "http_search",
+      "transport": "http_rest",
+      "run": 2,
+      "cache": "warm",
+      "total_ms": 21.170125,
+      "vector_embedder_init_ms": 0.0,
+      "vector_load_embeddings_ms": 0.0,
+      "vector_decode_embeddings_ms": 0.0,
+      "vector_score_embeddings_ms": 1.594792
+    },
+    {
+      "chunks": 10000,
+      "command": "mcp_search",
+      "transport": "mcp_http",
+      "run": 1,
+      "cache": "cold",
+      "total_ms": 873.38475,
+      "vector_embedder_init_ms": 842.393333,
+      "vector_load_embeddings_ms": 7.934791,
+      "vector_decode_embeddings_ms": 0.834541,
+      "vector_score_embeddings_ms": 0.8965
+    },
+    {
+      "chunks": 10000,
+      "command": "mcp_search",
+      "transport": "mcp_http",
+      "run": 2,
+      "cache": "warm",
+      "total_ms": 19.112084,
+      "vector_embedder_init_ms": 0.0,
+      "vector_load_embeddings_ms": 0.0,
+      "vector_decode_embeddings_ms": 0.0,
+      "vector_score_embeddings_ms": 0.939458
+    },
+    {
+      "chunks": 50000,
+      "command": "search",
+      "transport": "cli",
+      "run": 1,
+      "cache": "process_cold",
+      "total_ms": 963.274708,
+      "vector_embedder_init_ms": 823.379625,
+      "vector_load_embeddings_ms": 40.05525,
+      "vector_decode_embeddings_ms": 11.310625,
+      "vector_score_embeddings_ms": 4.016166
+    },
+    {
+      "chunks": 50000,
+      "command": "search",
+      "transport": "cli",
+      "run": 2,
+      "cache": "process_cold",
+      "total_ms": 966.60675,
+      "vector_embedder_init_ms": 781.902709,
+      "vector_load_embeddings_ms": 42.368375,
+      "vector_decode_embeddings_ms": 12.364958,
+      "vector_score_embeddings_ms": 4.046625
+    },
+    {
+      "chunks": 50000,
+      "command": "http_search",
+      "transport": "http_rest",
+      "run": 1,
+      "cache": "cold",
+      "total_ms": 873.864833,
+      "vector_embedder_init_ms": 803.648083,
+      "vector_load_embeddings_ms": 38.21375,
+      "vector_decode_embeddings_ms": 6.097708,
+      "vector_score_embeddings_ms": 3.539583
+    },
+    {
+      "chunks": 50000,
+      "command": "http_search",
+      "transport": "http_rest",
+      "run": 2,
+      "cache": "warm",
+      "total_ms": 22.817458,
+      "vector_embedder_init_ms": 0.0,
+      "vector_load_embeddings_ms": 0.0,
+      "vector_decode_embeddings_ms": 0.0,
+      "vector_score_embeddings_ms": 4.364542
+    },
+    {
+      "chunks": 50000,
+      "command": "mcp_search",
+      "transport": "mcp_http",
+      "run": 1,
+      "cache": "cold",
+      "total_ms": 910.749458,
+      "vector_embedder_init_ms": 843.521542,
+      "vector_load_embeddings_ms": 38.197708,
+      "vector_decode_embeddings_ms": 5.535042,
+      "vector_score_embeddings_ms": 4.150375
+    },
+    {
+      "chunks": 50000,
+      "command": "mcp_search",
+      "transport": "mcp_http",
+      "run": 2,
+      "cache": "warm",
+      "total_ms": 26.8745,
+      "vector_embedder_init_ms": 0.0,
+      "vector_load_embeddings_ms": 0.0,
+      "vector_decode_embeddings_ms": 0.0,
+      "vector_score_embeddings_ms": 4.729125
+    }
+  ]
+}

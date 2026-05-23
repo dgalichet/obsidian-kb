@@ -372,6 +372,8 @@ Optional benchmark logging can be enabled in `.obsidian-kb.toml` with
 `[benchmark] enabled = true`. Timings are appended locally as JSONL under
 `.obsidian-kb/benchmarks.jsonl` by default, and search query text is omitted
 unless `include_query = true`.
+Published vault-size benchmark results and the reproducible synthetic benchmark
+runner are documented in [docs/benchmarks.md](docs/benchmarks.md).
 
 For MCP clients, `obsidian-kb mcp` runs a local stdio server with search,
 related, show, graph, tags, properties, stats, warmup, unload, and status tools.
