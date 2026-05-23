@@ -1,0 +1,86 @@
+name: Benchmark Guardrail
+
+on:
+  pull_request:
+    paths:
+      - Cargo.lock
+      - Cargo.toml
+      - src/**
+      - examples/**
+      - tools/**
+      - benchmarks/**
+      - docs/benchmarks.md
+      - .github/workflows/benchmarks.yml
+  workflow_dispatch:
+    inputs:
+      chunks:
+        description: Comma-separated synthetic chunk counts
+        required: false
+        default: "1000,10000,50000"
+      runs:
+        description: Vector benchmark runs per vault
+        required: false
+        default: "3"
+  schedule:
+    - cron: "27 3 * * 1"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  synthetic-benchmarks:
+    name: Synthetic vault benchmark
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
+        continue-on-error: true
+
+      - name: Build benchmark binaries
+        run: cargo build --release --locked --bins --examples
+
+      - name: Select benchmark size
+        id: bench-config
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "chunks=${{ inputs.chunks }}" >> "$GITHUB_OUTPUT"
+            echo "runs=${{ inputs.runs }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "chunks=1000,10000,50000" >> "$GITHUB_OUTPUT"
+            echo "runs=3" >> "$GITHUB_OUTPUT"
+          else
+            echo "chunks=1000,10000" >> "$GITHUB_OUTPUT"
+            echo "runs=3" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run synthetic benchmarks
+        run: |
+          tools/benchmark_vault_sizes.sh \
+            --chunks "${{ steps.bench-config.outputs.chunks }}" \
+            --runs "${{ steps.bench-config.outputs.runs }}" \
+            --workdir "$RUNNER_TEMP/obsidian-kb-bench" \
+            --no-build \
+            --vector-only
+
+      - name: Check benchmark budgets
+        run: |
+          tools/check_benchmark_budget.sh \
+            --budgets benchmarks/budgets.json \
+            "$RUNNER_TEMP/obsidian-kb-bench" \
+            "${{ steps.bench-config.outputs.chunks }}"
+
+      - name: Upload benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: synthetic-benchmark-${{ github.run_id }}
+          path: ${{ runner.temp }}/obsidian-kb-bench
+          if-no-files-found: ignore

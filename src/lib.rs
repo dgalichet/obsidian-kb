@@ -25,6 +25,7 @@ pub mod schema;
 pub mod scoring;
 pub mod search;
 pub mod serve;
+pub mod synthetic;
 pub mod tantivy_index;
 pub mod vault;
 pub mod vector_search;

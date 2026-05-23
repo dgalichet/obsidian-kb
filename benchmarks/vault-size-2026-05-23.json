@@ -3,11 +3,12 @@
   "date": "2026-05-23",
   "obsidian_kb_version": "0.0.0-snapshot",
   "platform": "Darwin 25.5.0 arm64",
-  "runner": "tools/benchmark_vault_sizes.sh --chunks 1000,10000,50000 --runs 2 --workdir /private/tmp/obsidian-kb-bench-public --no-build",
+  "runner": "tools/benchmark_vault_sizes.sh --chunks 1000,10000,50000 --runs 2 --workdir /private/tmp/obsidian-kb-bench-public --no-build; tools/benchmark_vault_sizes.sh --chunks 250000 --runs 3 --workdir /private/tmp/obsidian-kb-bench-250k --no-build",
   "methodology": {
     "vault": "Synthetic Markdown vaults with deterministic generated sections.",
     "embeddings": "Deterministic synthetic 384-dimensional embeddings seeded with examples/seed_synthetic_embeddings.rs.",
     "indexing": "index --rebuild --no-embeddings, followed by synthetic embedding seeding.",
+    "runs": "1k, 10k, and 50k use two requests per transport. 250k uses three requests per transport to observe a second warm-cache repeat.",
     "search_query": "synthetic local retrieval graph benchmark memory agent",
     "search_mode": "hybrid",
     "graph_expansion": true,
@@ -42,6 +43,14 @@
       "sqlite_replace_ms": 393.625458,
       "tantivy_rebuild_ms": 904.515666,
       "load_chunks_ms": 170.0765
+    },
+    {
+      "chunks": 250000,
+      "total_ms": 9701.14225,
+      "load_vault_ms": 1260.162333,
+      "sqlite_replace_ms": 2702.739583,
+      "tantivy_rebuild_ms": 4631.402417,
+      "load_chunks_ms": 899.27575
     }
   ],
   "search": [
@@ -260,6 +269,114 @@
       "vector_load_embeddings_ms": 0.0,
       "vector_decode_embeddings_ms": 0.0,
       "vector_score_embeddings_ms": 4.729125
+    },
+    {
+      "chunks": 250000,
+      "command": "search",
+      "transport": "cli",
+      "run": 1,
+      "cache": "process_cold",
+      "total_ms": 1375.724542,
+      "vector_embedder_init_ms": 924.141458,
+      "vector_load_embeddings_ms": 210.677958,
+      "vector_decode_embeddings_ms": 31.3035,
+      "vector_score_embeddings_ms": 22.311458
+    },
+    {
+      "chunks": 250000,
+      "command": "search",
+      "transport": "cli",
+      "run": 2,
+      "cache": "process_cold",
+      "total_ms": 1280.504459,
+      "vector_embedder_init_ms": 880.74425,
+      "vector_load_embeddings_ms": 226.904166,
+      "vector_decode_embeddings_ms": 36.36975,
+      "vector_score_embeddings_ms": 20.535792
+    },
+    {
+      "chunks": 250000,
+      "command": "search",
+      "transport": "cli",
+      "run": 3,
+      "cache": "process_cold",
+      "total_ms": 1193.4135,
+      "vector_embedder_init_ms": 832.072458,
+      "vector_load_embeddings_ms": 201.773791,
+      "vector_decode_embeddings_ms": 27.914542,
+      "vector_score_embeddings_ms": 20.24525
+    },
+    {
+      "chunks": 250000,
+      "command": "http_search",
+      "transport": "http_rest",
+      "run": 1,
+      "cache": "cold",
+      "total_ms": 1271.361875,
+      "vector_embedder_init_ms": 933.734625,
+      "vector_load_embeddings_ms": 255.434,
+      "vector_decode_embeddings_ms": 33.133333,
+      "vector_score_embeddings_ms": 25.225208
+    },
+    {
+      "chunks": 250000,
+      "command": "http_search",
+      "transport": "http_rest",
+      "run": 2,
+      "cache": "warm",
+      "total_ms": 47.725667,
+      "vector_embedder_init_ms": 0.0,
+      "vector_load_embeddings_ms": 0.0,
+      "vector_decode_embeddings_ms": 0.0,
+      "vector_score_embeddings_ms": 25.437958
+    },
+    {
+      "chunks": 250000,
+      "command": "http_search",
+      "transport": "http_rest",
+      "run": 3,
+      "cache": "warm",
+      "total_ms": 44.456375,
+      "vector_embedder_init_ms": 0.0,
+      "vector_load_embeddings_ms": 0.0,
+      "vector_decode_embeddings_ms": 0.0,
+      "vector_score_embeddings_ms": 24.265708
+    },
+    {
+      "chunks": 250000,
+      "command": "mcp_search",
+      "transport": "mcp_http",
+      "run": 1,
+      "cache": "cold",
+      "total_ms": 1144.487792,
+      "vector_embedder_init_ms": 846.092792,
+      "vector_load_embeddings_ms": 218.276625,
+      "vector_decode_embeddings_ms": 35.881458,
+      "vector_score_embeddings_ms": 20.957875
+    },
+    {
+      "chunks": 250000,
+      "command": "mcp_search",
+      "transport": "mcp_http",
+      "run": 2,
+      "cache": "warm",
+      "total_ms": 47.847666,
+      "vector_embedder_init_ms": 0.0,
+      "vector_load_embeddings_ms": 0.0,
+      "vector_decode_embeddings_ms": 0.0,
+      "vector_score_embeddings_ms": 20.878709
+    },
+    {
+      "chunks": 250000,
+      "command": "mcp_search",
+      "transport": "mcp_http",
+      "run": 3,
+      "cache": "warm",
+      "total_ms": 43.3445,
+      "vector_embedder_init_ms": 0.0,
+      "vector_load_embeddings_ms": 0.0,
+      "vector_decode_embeddings_ms": 0.0,
+      "vector_score_embeddings_ms": 23.351791
     }
   ]
 }

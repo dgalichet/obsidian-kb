@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "description": "Broad synthetic benchmark budgets for noisy CI runners. Values are guardrails, not precise performance targets.",
+  "metrics": {
+    "index_total_ms": {
+      "base_ms": 30000,
+      "per_chunk_ms": 0.1,
+      "description": "Maximum index command total time."
+    },
+    "warm_vector_total_ms": {
+      "base_ms": 500,
+      "per_chunk_ms": 0.01,
+      "description": "Maximum warm synthetic vector search total time."
+    },
+    "warm_vector_score_ms": {
+      "base_ms": 100,
+      "per_chunk_ms": 0.005,
+      "description": "Maximum warm brute-force vector scoring phase time."
+    }
+  },
+  "overrides": {}
+}

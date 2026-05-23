@@ -15,6 +15,8 @@ Options:
   --runs N            Requests per transport after indexing. Default: 2
   --full-embeddings   Build local FastEmbed passage embeddings instead of
                       deterministic synthetic embeddings.
+  --vector-only       Run direct synthetic vector benchmarks only. This skips
+                      CLI/HTTP/MCP query embedding and is intended for CI.
   --no-build          Do not run cargo build --release before benchmarking.
   -h, --help          Show this help.
 
@@ -37,6 +39,7 @@ workdir="${TMPDIR:-/tmp}/obsidian-kb-vault-size-bench"
 binary="target/release/obsidian-kb"
 runs=2
 full_embeddings=0
+vector_only=0
 build_release=1
 query="synthetic local retrieval graph benchmark memory agent"
 
@@ -62,6 +65,10 @@ while [ "$#" -gt 0 ]; do
       full_embeddings=1
       shift
       ;;
+    --vector-only)
+      vector_only=1
+      shift
+      ;;
     --no-build)
       build_release=0
       shift
@@ -79,8 +86,10 @@ while [ "$#" -gt 0 ]; do
 done
 
 need cargo
-need curl
 need jq
+if [ "$vector_only" -eq 0 ]; then
+  need curl
+fi
 
 if [ "$build_release" -eq 1 ]; then
   cargo build --release
@@ -162,39 +171,6 @@ allow_forward_links = false
 ignore_targets = []
 ignore_globs = []
 EOF
-}
-
-generate_vault() {
-  local vault="$1"
-  local chunks="$2"
-  local chunk=0
-  local file=0
-  local chunks_per_file=100
-
-  rm -rf "$vault"
-  mkdir -p "$vault/notes"
-  while [ "$chunk" -lt "$chunks" ]; do
-    file=$((file + 1))
-    local dir="$vault/notes/$(printf '%03d' $((file / 100)))"
-    local note="$dir/synthetic-$(printf '%05d' "$file").md"
-    mkdir -p "$dir"
-    {
-      printf -- "---\n"
-      printf "tags: [synthetic, benchmark]\n"
-      printf "status: generated\n"
-      printf -- "---\n\n"
-      for _ in $(seq 1 "$chunks_per_file"); do
-        if [ "$chunk" -ge "$chunks" ]; then
-          break
-        fi
-        chunk=$((chunk + 1))
-        printf "## Synthetic chunk %05d\n\n" "$chunk"
-        printf "This benchmark chunk number %05d discusses local first retrieval, graph expansion, BM25 lexical matching, vector search, SQLite metadata, Tantivy indexing, and MCP HTTP cache behavior. " "$chunk"
-        printf "The repeated benchmark vocabulary makes every chunk searchable while the numeric identifier keeps chunk hashes distinct. "
-        printf "Related topic anchors: agent memory, local knowledge base, Obsidian vault, synthetic public benchmark.\n\n"
-      done
-    } > "$note"
-  done
 }
 
 start_server() {
@@ -283,7 +259,12 @@ for chunks in $chunks_list; do
   mkdir -p "$outdir"
 
   echo "== ${chunks} chunks =="
-  generate_vault "$vault" "$chunks"
+  cargo run --release --quiet --example generate_synthetic_vault -- \
+    --out "$vault" \
+    --chunks "$chunks" \
+    --chunks-per-note 100 \
+    --links sparse \
+    --overwrite > "$outdir/generate-vault.json"
   write_config "$vault"
 
   if [ "$full_embeddings" -eq 1 ]; then
@@ -294,18 +275,25 @@ for chunks in $chunks_list; do
       > "$outdir/seed-embeddings.txt"
   fi
 
-  for _ in $(seq 1 "$runs"); do
-    "$binary" --config "$config" search "$query" --mode hybrid --expand-graph --top 8 --json \
-      > /dev/null
-  done
+  if [ "$vector_only" -eq 1 ]; then
+    cargo run --release --quiet --example benchmark_synthetic_vectors -- \
+      --config "$config" \
+      --runs "$runs" \
+      --limit 80 > "$outdir/synthetic-vector.txt"
+  else
+    for _ in $(seq 1 "$runs"); do
+      "$binary" --config "$config" search "$query" --mode hybrid --expand-graph --top 8 --json \
+        > /dev/null
+    done
 
-  start_server "$config" "$outdir/http-rest.log"
-  run_http_searches
-  stop_server
+    start_server "$config" "$outdir/http-rest.log"
+    run_http_searches
+    stop_server
 
-  start_server "$config" "$outdir/mcp-http.log"
-  run_mcp_http_searches
-  stop_server
+    start_server "$config" "$outdir/mcp-http.log"
+    run_mcp_http_searches
+    stop_server
+  fi
 
   summarize_log "$log_path" "$outdir/summary.json"
   cp "$log_path" "$outdir/benchmarks.jsonl"
