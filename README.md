@@ -319,6 +319,7 @@ Inspect a result:
 ```bash
 obsidian-kb show <chunk-id>
 obsidian-kb show <chunk-id> --json
+obsidian-kb show <chunk-id> <chunk-id> --json
 ```
 
 Check that the vault and indexes are healthy:

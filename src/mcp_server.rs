@@ -383,13 +383,37 @@ impl McpServer {
     }
 
     pub(crate) fn tool_show(&self, arguments: &Value) -> Result<Value> {
-        let chunk_id = string_arg(arguments, "chunk_id")?;
+        let chunk_id = arguments
+            .get("chunk_id")
+            .map(|value| {
+                value
+                    .as_str()
+                    .map(ToOwned::to_owned)
+                    .context("argument `chunk_id` must be a string")
+            })
+            .transpose()?;
+        let chunk_ids_argument_present = arguments.get("chunk_ids").is_some();
+        let mut chunk_ids = Vec::new();
+        if let Some(chunk_id) = chunk_id {
+            chunk_ids.push(chunk_id);
+        }
+        chunk_ids.extend(string_list_arg(arguments, "chunk_ids")?);
+        if chunk_ids.is_empty() {
+            bail!("missing string argument `chunk_id` or non-empty array argument `chunk_ids`");
+        }
+
         let paths = KbPaths::from_config(&self.config);
         let db = Db::open(&paths.db_path)?;
-        let chunk = db
-            .load_chunk(chunk_id)?
-            .with_context(|| format!("chunk not found: {chunk_id}"))?;
-        serde_json::to_value(chunk).map_err(Into::into)
+        if chunk_ids.len() == 1 && !chunk_ids_argument_present {
+            let chunk_id = &chunk_ids[0];
+            let chunk = db
+                .load_chunk(chunk_id)?
+                .with_context(|| format!("chunk not found: {chunk_id}"))?;
+            serde_json::to_value(chunk).map_err(Into::into)
+        } else {
+            let report = db.load_chunks_by_id(&chunk_ids)?;
+            serde_json::to_value(report).map_err(Into::into)
+        }
     }
 
     pub(crate) fn tool_graph(&self, arguments: &Value) -> Result<Value> {
@@ -555,13 +579,24 @@ fn tools() -> Value {
         },
         {
             "name": "show",
-            "description": "Load one indexed chunk by chunk id.",
+            "description": "Load one or more indexed chunks by chunk id.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "chunk_id": { "type": "string" }
+                    "chunk_id": {
+                        "type": "string",
+                        "description": "Single indexed chunk id. Preserves the legacy single-chunk response shape."
+                    },
+                    "chunk_ids": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Indexed chunk ids to load in one batch. Returns an object with chunks and missing ids."
+                    }
                 },
-                "required": ["chunk_id"]
+                "anyOf": [
+                    { "required": ["chunk_id"] },
+                    { "required": ["chunk_ids"] }
+                ]
             }
         },
         {
@@ -753,6 +788,11 @@ mod tests {
         assert!(related_args.get("note").is_some());
         assert!(related_args.get("text").is_some());
         assert!(related_args.get("candidates").is_some());
+
+        let show = tool_named(&tools, "show");
+        let show_args = &show["inputSchema"]["properties"];
+        assert!(show_args.get("chunk_id").is_some());
+        assert!(show_args.get("chunk_ids").is_some());
     }
 
     #[test]
@@ -817,6 +857,33 @@ mod tests {
         assert_eq!(report["source"]["kind"], "note");
         assert_eq!(report["source"]["path"], "alpha.md");
         assert_eq!(report["notes"][0]["path"], "beta.md");
+    }
+
+    #[test]
+    fn show_tool_accepts_chunk_ids_batch() {
+        let (_temp, config) = indexed_test_config();
+        let paths = KbPaths::from_config(&config);
+        let db = Db::open(&paths.db_path).unwrap();
+        let chunks = db.load_all_chunks().unwrap();
+        let chunk_ids = chunks
+            .iter()
+            .take(2)
+            .map(|chunk| chunk.chunk_id.clone())
+            .collect::<Vec<_>>();
+        let mut server = McpServer::new(config);
+
+        let report = call_tool_json(
+            &mut server,
+            "show",
+            json!({
+                "chunk_ids": [&chunk_ids[0], &chunk_ids[1], "missing-chunk"]
+            }),
+        );
+
+        assert_eq!(report["chunks"].as_array().unwrap().len(), 2);
+        assert_eq!(report["chunks"][0]["chunk_id"], chunk_ids[0]);
+        assert_eq!(report["chunks"][1]["chunk_id"], chunk_ids[1]);
+        assert_eq!(report["missing"][0], "missing-chunk");
     }
 
     #[test]

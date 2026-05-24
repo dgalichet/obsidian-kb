@@ -47,6 +47,43 @@ fn show_graph_and_stats_support_json() {
         .success()
         .stdout(predicate::str::contains("\"note_path\""));
 
+    let output = Command::cargo_bin("obsidian-kb")
+        .unwrap()
+        .args([
+            "search",
+            "--vault",
+            vault.to_str().unwrap(),
+            "--mode",
+            "bm25",
+            "--json",
+            "--top",
+            "2",
+            "note",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let hits: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let first_chunk_id = hits[0]["best_chunk_id"].as_str().unwrap();
+    let second_chunk_id = hits[1]["best_chunk_id"].as_str().unwrap();
+    let output = Command::cargo_bin("obsidian-kb")
+        .unwrap()
+        .args([
+            "show",
+            "--vault",
+            vault.to_str().unwrap(),
+            first_chunk_id,
+            second_chunk_id,
+            "missing-chunk",
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["chunks"].as_array().unwrap().len(), 2);
+    assert_eq!(report["missing"][0], "missing-chunk");
+
     Command::cargo_bin("obsidian-kb")
         .unwrap()
         .args([

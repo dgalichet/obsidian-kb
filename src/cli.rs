@@ -161,7 +161,8 @@ pub struct SearchArgs {
 
 #[derive(Debug, Args)]
 pub struct ShowArgs {
-    pub chunk_id: String,
+    #[arg(value_name = "CHUNK_ID", num_args = 1..)]
+    pub chunk_ids: Vec<String>,
 
     #[arg(long, help = "Path to the Obsidian vault")]
     pub vault: Option<PathBuf>,

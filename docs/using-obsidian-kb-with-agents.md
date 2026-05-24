@@ -261,7 +261,7 @@ MCP mode exposes these tools:
 
 - `search`: run BM25, vector, or hybrid search with the same options as the CLI;
 - `related`: find notes semantically related to an indexed note or draft text;
-- `show`: read one selected chunk by ID;
+- `show`: read one selected chunk by `chunk_id`, or several chunks with `chunk_ids`;
 - `graph`: inspect direct wikilinks and backlinks around one indexed note;
 - `tags`: list indexed tags, optionally filtered by prefix;
 - `properties`: list indexed frontmatter property keys, or values for one key;

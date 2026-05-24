@@ -223,18 +223,31 @@ pub fn run() -> Result<()> {
                     let db = benchmark::time_phase(&mut benchmark, "open_db_ms", || {
                         db::Db::open(&paths.db_path)
                     })?;
-                    let Some(chunk) =
-                        benchmark::time_phase(&mut benchmark, "load_chunk_ms", || {
-                            db.load_chunk(&args.chunk_id)
-                        })?
-                    else {
-                        bail!("chunk not found: {}", args.chunk_id);
-                    };
+                    let report = benchmark::time_phase(&mut benchmark, "load_chunk_ms", || {
+                        db.load_chunks_by_id(&args.chunk_ids)
+                    })?;
                     benchmark::time_phase(&mut benchmark, "output_ms", || -> Result<()> {
-                        if args.json {
-                            output::print_json(&chunk)?;
+                        if args.chunk_ids.len() == 1 {
+                            let Some(chunk) = report.chunks.first() else {
+                                bail!("chunk not found: {}", args.chunk_ids[0]);
+                            };
+                            if args.json {
+                                output::print_json(chunk)?;
+                            } else {
+                                output::print_chunk(chunk);
+                            }
+                        } else if args.json {
+                            output::print_json(&report)?;
                         } else {
-                            output::print_chunk(&chunk);
+                            for (index, chunk) in report.chunks.iter().enumerate() {
+                                if index > 0 {
+                                    println!();
+                                }
+                                output::print_chunk(chunk);
+                            }
+                            if !report.missing.is_empty() {
+                                bail!("chunks not found: {}", report.missing.join(", "));
+                            }
                         }
                         Ok(())
                     })?;

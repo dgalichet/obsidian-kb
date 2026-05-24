@@ -188,6 +188,12 @@ pub struct ChunkRecord {
     pub tags: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ShowChunksReport {
+    pub chunks: Vec<ChunkRecord>,
+    pub missing: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NoteSummary {
     pub path: String,
