@@ -109,6 +109,17 @@ Read one selected chunk:
 }
 ```
 
+Read several selected chunks in one call:
+
+```json
+{
+  "chunk_ids": [
+    "paste-first-result-chunk-id-here",
+    "paste-second-result-chunk-id-here"
+  ]
+}
+```
+
 ## Claude Desktop MCP
 
 Open Claude Desktop settings, use the Developer section to edit the MCP config,
@@ -185,7 +196,8 @@ to the repository or vault `AGENTS.md`:
   acronyms, and file names.
 - Use `--mode vector` for vague semantic questions.
 - Prefer `--json --include-text --max-chars 1200` for first-pass context.
-- Use `obsidian-kb show <chunk-id> --json` only for selected chunks.
+- Use `obsidian-kb show <chunk-id> --json` only for selected chunks; pass
+  several chunk ids in one command when reading multiple selected chunks.
 - Cite note path, heading, and line range.
 - Do not modify notes unless the user explicitly asks.
 ```
@@ -212,6 +224,10 @@ obsidian-kb --config /path/to/ObsidianVault/.obsidian-kb.toml \
 
 obsidian-kb --config /path/to/ObsidianVault/.obsidian-kb.toml \
   show <chunk-id> \
+  --json
+
+obsidian-kb --config /path/to/ObsidianVault/.obsidian-kb.toml \
+  show <chunk-id> <chunk-id> \
   --json
 ```
 
@@ -272,11 +288,12 @@ alwaysApply: false
 
 When the user asks about the Obsidian vault, use the obsidian-kb MCP tools.
 Search first, read second. Start with `search`; use `show` only for selected
-chunks. Use `mode: "bm25"` for exact names, commands, errors, APIs, classes,
-acronyms, and file names. Use `mode: "vector"` for vague semantic questions.
-Use `mode: "hybrid"` with `expand_graph: true` for conceptual questions. Cite
-path, heading, and line range. Do not bulk-read the vault or modify notes unless
-the user explicitly asks.
+chunks, and use `chunk_ids` when reading several selected chunks. Use
+`mode: "bm25"` for exact names, commands, errors, APIs, classes, acronyms, and
+file names. Use `mode: "vector"` for vague semantic questions. Use
+`mode: "hybrid"` with `expand_graph: true` for conceptual questions. Cite path,
+heading, and line range. Do not bulk-read the vault or modify notes unless the
+user explicitly asks.
 ```
 
 After Cursor reloads the MCP config, ask:
@@ -333,9 +350,10 @@ Add this rule to Continue:
 
 ```text
 For Obsidian vault questions, use the obsidian-kb MCP tools. Search first, read
-second. Use search before show. Use bm25 for exact terms, vector for vague
-ideas, and hybrid with expand_graph for conceptual questions. Cite path,
-heading, and line range. Do not bulk-read or modify the vault unless asked.
+second. Use search before show; pass chunk_ids when reading several selected
+chunks. Use bm25 for exact terms, vector for vague ideas, and hybrid with
+expand_graph for conceptual questions. Cite path, heading, and line range. Do
+not bulk-read or modify the vault unless asked.
 ```
 
 ## Shell Scripts
@@ -393,20 +411,20 @@ obsidian-kb --config "$OBSIDIAN_KB_CONFIG" \
   --max-chars "${OBSIDIAN_KB_MAX_CHARS:-1200}"
 ```
 
-`kb-show` for one selected chunk:
+`kb-show` for one or more selected chunks:
 
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [ "$#" -ne 1 ]; then
-  echo "Usage: kb-show CHUNK_ID" >&2
+if [ "$#" -eq 0 ]; then
+  echo "Usage: kb-show CHUNK_ID [CHUNK_ID...]" >&2
   exit 2
 fi
 
 : "${OBSIDIAN_KB_CONFIG:?Set OBSIDIAN_KB_CONFIG=/path/to/.obsidian-kb.toml}"
 
-obsidian-kb --config "$OBSIDIAN_KB_CONFIG" show "$1" --json
+obsidian-kb --config "$OBSIDIAN_KB_CONFIG" show "$@" --json
 ```
 
 The expected workflow is:
@@ -414,6 +432,7 @@ The expected workflow is:
 ```bash
 kb-search "how should agents avoid context overload?"
 kb-show <chunk-id-from-search>
+kb-show <chunk-id-from-search> <another-chunk-id-from-search>
 ```
 
 Do not use these scripts as a reason to read every matching file. They exist to

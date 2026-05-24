@@ -1,13 +1,13 @@
 use anyhow::Result;
 use chrono::Utc;
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, params, params_from_iter};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::Path;
 
 use crate::models::{
     ChunkRecord, DocumentKind, GraphEdge, GraphView, IndexStats, NoteSummary, ParsedNote,
     PropertyFacetReport, PropertyFilter, PropertyKeyFacet, PropertyOperator, PropertyValueFacet,
-    SearchFilters, StatsReport, TagFacet, UnresolvedLinkRecord,
+    SearchFilters, ShowChunksReport, StatsReport, TagFacet, UnresolvedLinkRecord,
 };
 use crate::properties;
 use crate::schema;
@@ -241,6 +241,41 @@ impl Db {
             )
             .optional()
             .map_err(Into::into)
+    }
+
+    pub fn load_chunks_by_id(&self, chunk_ids: &[String]) -> Result<ShowChunksReport> {
+        if chunk_ids.is_empty() {
+            return Ok(ShowChunksReport {
+                chunks: Vec::new(),
+                missing: Vec::new(),
+            });
+        }
+
+        let placeholders = vec!["?"; chunk_ids.len()].join(", ");
+        let mut stmt = self.conn.prepare(&format!(
+            "{CHUNK_SELECT_BASE} WHERE c.id IN ({placeholders})"
+        ))?;
+        let rows = stmt.query_map(
+            params_from_iter(chunk_ids.iter().map(String::as_str)),
+            chunk_from_row,
+        )?;
+        let mut loaded = BTreeMap::new();
+        for row in rows {
+            let chunk = row?;
+            loaded.insert(chunk.chunk_id.clone(), chunk);
+        }
+
+        let mut chunks = Vec::new();
+        let mut missing = Vec::new();
+        for chunk_id in chunk_ids {
+            if let Some(chunk) = loaded.get(chunk_id) {
+                chunks.push(chunk.clone());
+            } else {
+                missing.push(chunk_id.clone());
+            }
+        }
+
+        Ok(ShowChunksReport { chunks, missing })
     }
 
     pub fn chunks_matching_file_ids(&self, file_ids: &BTreeSet<i64>) -> Result<Vec<ChunkRecord>> {

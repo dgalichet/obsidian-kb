@@ -296,6 +296,7 @@ obsidian-kb search "query" --mode hybrid --include-text --max-chars 1200 --json
 
 obsidian-kb show <chunk-id>
 obsidian-kb show <chunk-id> --json
+obsidian-kb show <chunk-id> <chunk-id> --json
 
 obsidian-kb graph "Obsidian" --depth 1
 obsidian-kb graph "Obsidian" --depth 1 --json
