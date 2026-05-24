@@ -579,7 +579,7 @@ fn tools() -> Value {
         },
         {
             "name": "show",
-            "description": "Load one or more indexed chunks by chunk id.",
+            "description": "Load one or more indexed chunks by chunk id. Pass either chunk_id or chunk_ids.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -589,14 +589,11 @@ fn tools() -> Value {
                     },
                     "chunk_ids": {
                         "type": "array",
+                        "minItems": 1,
                         "items": { "type": "string" },
                         "description": "Indexed chunk ids to load in one batch. Returns an object with chunks and missing ids."
                     }
-                },
-                "anyOf": [
-                    { "required": ["chunk_id"] },
-                    { "required": ["chunk_ids"] }
-                ]
+                }
             }
         },
         {
@@ -793,6 +790,33 @@ mod tests {
         let show_args = &show["inputSchema"]["properties"];
         assert!(show_args.get("chunk_id").is_some());
         assert!(show_args.get("chunk_ids").is_some());
+    }
+
+    #[test]
+    fn tool_input_schemas_are_object_roots_without_combinators() {
+        let tools = tools();
+        let forbidden_root_keywords = ["oneOf", "anyOf", "allOf", "enum", "not"];
+
+        for tool in tools.as_array().unwrap() {
+            let schema = &tool["inputSchema"];
+            assert_eq!(
+                schema["type"], "object",
+                "{} inputSchema must have an object root",
+                tool["name"]
+            );
+            assert!(
+                schema["properties"].is_object(),
+                "{} inputSchema must declare object properties",
+                tool["name"]
+            );
+            for keyword in forbidden_root_keywords {
+                assert!(
+                    schema.get(keyword).is_none(),
+                    "{} inputSchema must not use {keyword} at the root",
+                    tool["name"]
+                );
+            }
+        }
     }
 
     #[test]
