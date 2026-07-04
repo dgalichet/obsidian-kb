@@ -10,6 +10,8 @@
 
 **Search your Obsidian vault like a knowledge base. Keep it local.**
 
+Website: [dgalichet.github.io/obsidian-kb](https://dgalichet.github.io/obsidian-kb/)
+
 `obsidian-kb` means **Obsidian Knowledge Base**. It turns an Obsidian vault into
 a local knowledge base that you, a script, or a coding agent can search without
 opening the whole vault.
