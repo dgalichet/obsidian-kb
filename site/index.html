@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>obsidian-kb — recherche locale pour Obsidian</title>
+<meta name="description" content="obsidian-kb ajoute une couche de recherche locale à vos notes Markdown pour qu'un agent LLM puisse interroger votre vault — sans jamais l'envoyer entier.">
+<link rel="icon" type="image/png" href="./assets/okb-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script>try{var _t=localStorage.getItem('okb-theme');if(_t==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}</script>
+<style>
+  :root{
+    --bg:#0b0b10; --surface:#131320; --surface-2:#15151f; --surface-3:#0f0f18;
+    --toggle-bg:#16161f; --btn2-bg:#17171f; --btn2-hover:#1c1c27;
+    --text:#ece9f5; --text-muted:#a8a6c0; --text-dim:#8b88a3; --nav:#b7b5cc;
+    --body-text:#b3b1c9; --feat-text:#ded9ee; --article-text:#cbc8dc; --label:#7f7a99;
+    --accent:#a68bff; --accent-soft:#c3b9ff; --teal:#7fe3c0; --amber:#e8c79b;
+    --header-bg:rgba(11,11,16,.72); --scroll-thumb:#26263a;
+  }
+  html[data-theme="light"]{
+    --bg:#f4f2fb; --surface:#ffffff; --surface-2:#f6f4fc; --surface-3:#ffffff;
+    --toggle-bg:#ecebf7; --btn2-bg:#ffffff; --btn2-hover:#f0eef9;
+    --text:#191725; --text-muted:#55516b; --text-dim:#6c6982; --nav:#4a4763;
+    --body-text:#494661; --feat-text:#2a2740; --article-text:#322f49; --label:#807c98;
+    --accent:#6b4fd4; --accent-soft:#7657e0; --teal:#158f6a; --amber:#986713;
+    --header-bg:rgba(244,242,251,.82); --scroll-thumb:#d7d3e8;
+  }
+  body, body * { transition: background-color .25s ease, border-color .25s ease, color .25s ease; }
+  .okb-ico-light { display: none; }
+  html[data-theme="light"] .okb-ico-dark { display: none; }
+  html[data-theme="light"] .okb-ico-light { display: inline-block; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { background: var(--bg); }
+  ::selection { background: rgba(124,92,255,.35); }
+  @keyframes okbFlow { to { background-position: 22px 0; } }
+  @keyframes okbPulse { 0%,100% { opacity:.35; transform:scale(1);} 50% { opacity:1; transform:scale(1.35);} }
+  @keyframes okbFade { from { opacity:0; transform:translateY(10px);} to { opacity:1; transform:none;} }
+  ::-webkit-scrollbar { width: 11px; height: 11px; }
+  ::-webkit-scrollbar-thumb { background: var(--scroll-thumb); border-radius: 20px; border: 3px solid var(--bg); }
+  html { scroll-behavior: smooth; }
+
+  #view { animation: okbFade .45s ease both; }
+
+  /* hover states (ported from the design's style-hover) */
+  .nav-link:hover { color:var(--text) !important; background:rgba(139,109,255,.1); }
+  .btn-gh:hover { filter:brightness(1.08); }
+  .btn-primary { transition: filter .15s, transform .15s, background-color .25s ease; }
+  .btn-primary:hover { filter:brightness(1.08); transform:translateY(-1px); }
+  .btn-secondary:hover { border-color:rgba(139,109,255,.45) !important; background:var(--btn2-hover) !important; }
+  .card { transition: transform .15s, border-color .15s, background-color .25s ease, color .25s ease; }
+  .card:hover { border-color:rgba(139,109,255,.34) !important; transform:translateY(-2px); }
+  .docbtn:hover { color:var(--text) !important; background:rgba(139,109,255,.08) !important; border-left-color:var(--accent) !important; }
+  .link-accent:hover { color:var(--accent-soft) !important; }
+  .foot-link:hover { color:var(--text) !important; }
+  .theme-btn:hover { color:var(--accent) !important; border-color:rgba(139,109,255,.42) !important; }
+
+  @media (max-width: 720px) {
+    .docs-grid { grid-template-columns: 1fr !important; }
+    .docs-aside { position: static !important; }
+  }
+</style>
+</head>
+<body style="color:var(--text);font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased;">
+
+<div style="min-height:100vh;background:radial-gradient(1100px 620px at 78% -8%, rgba(124,92,255,.14), transparent 60%), var(--bg);">
+
+  <!-- ============ HEADER ============ -->
+  <header style="position:sticky;top:0;z-index:50;backdrop-filter:blur(14px);background:var(--header-bg);border-bottom:1px solid rgba(139,109,255,.12);">
+    <div style="max-width:1160px;margin:0 auto;padding:14px 26px;display:flex;align-items:center;gap:22px;">
+      <a href="#/" style="display:flex;align-items:center;gap:11px;text-decoration:none;color:inherit;">
+        <img class="okb-ico-dark" src="./assets/okb-icon.png" alt="obsidian-kb" style="width:34px;height:34px;flex:none;border-radius:9px;object-fit:cover;">
+        <img class="okb-ico-light" src="./assets/okb-icon-light.png" alt="obsidian-kb" style="width:34px;height:34px;flex:none;border-radius:9px;object-fit:cover;">
+        <span style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:17px;letter-spacing:-.01em;">obsidian-kb</span>
+      </a>
+      <nav style="display:flex;align-items:center;gap:6px;margin-left:8px;">
+        <a href="#/docs" class="nav-link" style="text-decoration:none;color:var(--nav);font-size:14.5px;font-weight:500;padding:7px 12px;border-radius:8px;" data-i18n="nav.docs"></a>
+      </nav>
+      <div style="margin-left:auto;display:flex;align-items:center;gap:14px;">
+        <div style="display:flex;align-items:center;background:var(--toggle-bg);border:1px solid rgba(139,109,255,.16);border-radius:9px;padding:2px;">
+          <button id="lang-fr" onclick="setLang('fr')">FR</button>
+          <button id="lang-en" onclick="setLang('en')">EN</button>
+        </div>
+        <button id="theme-toggle" class="theme-btn" onclick="toggleTheme()" style="display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:9px;background:var(--toggle-bg);border:1px solid rgba(139,109,255,.16);color:var(--text-muted);cursor:pointer;flex:none;"></button>
+        <a href="https://github.com/dgalichet/obsidian-kb" target="_blank" rel="noopener" class="btn-gh" style="display:inline-flex;align-items:center;gap:8px;text-decoration:none;font-size:14px;font-weight:600;color:#0a0a0f;background:linear-gradient(135deg,#8b6bff,var(--accent));padding:9px 15px;border-radius:9px;">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+          GitHub
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- ============ ROUTED VIEW ============ -->
+  <div id="view"></div>
+
+  <!-- ============ FOOTER ============ -->
+  <footer style="border-top:1px solid rgba(139,109,255,.12);margin-top:20px;">
+    <div style="max-width:1160px;margin:0 auto;padding:34px 26px;display:flex;flex-wrap:wrap;gap:20px;align-items:center;justify-content:space-between;">
+      <div style="display:flex;align-items:center;gap:11px;">
+        <img class="okb-ico-dark" src="./assets/okb-icon.png" alt="obsidian-kb" style="width:28px;height:28px;flex:none;border-radius:8px;object-fit:cover;">
+        <img class="okb-ico-light" src="./assets/okb-icon-light.png" alt="obsidian-kb" style="width:28px;height:28px;flex:none;border-radius:8px;object-fit:cover;">
+        <div>
+          <div style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:15px;">obsidian-kb</div>
+          <div style="font-size:12.5px;color:var(--text-dim);" data-i18n="footer.tag"></div>
+        </div>
+      </div>
+      <div style="display:flex;gap:22px;font-size:14px;">
+        <a href="#/docs" class="foot-link" style="text-decoration:none;color:var(--nav);" data-i18n="nav.docs"></a>
+        <a href="https://github.com/dgalichet/obsidian-kb" target="_blank" rel="noopener" class="foot-link" style="text-decoration:none;color:var(--nav);">CLI</a>
+        <a href="https://github.com/dgalichet/obsidian-kb-plugin" target="_blank" rel="noopener" class="foot-link" style="text-decoration:none;color:var(--nav);">Plugin</a>
+        <a href="https://community.obsidian.md/plugins/okb" target="_blank" rel="noopener" class="foot-link" style="text-decoration:none;color:var(--nav);">Obsidian</a>
+      </div>
+    </div>
+    <div style="max-width:1160px;margin:0 auto;padding:0 26px 30px;font-size:12.5px;color:#6f6a8a;">© 2026 · MIT / Apache-2.0 · <span data-i18n="footer.made"></span></div>
+  </footer>
+</div>
+
+<script>
+// ---------- i18n dictionaries (ported from the design) ----------
+var DICTS = {
+  fr: {
+    nav: { docs: 'Documentation' },
+    hero: {
+      badge: 'Local-first · Open source · Rust',
+      title: 'Votre vault Obsidian, interrogeable comme une base de connaissances.',
+      sub: "obsidian-kb ajoute une couche de recherche locale à vos notes Markdown pour qu'un agent comme Claude ou Codex puisse interroger votre base de connaissances — sans jamais envoyer tout le vault à un LLM.",
+      cta1: 'Commencer', cta2: 'Voir sur GitHub'
+    },
+    pipe: {
+      vaultT: 'Vault Obsidian', vaultS: '.md · liens · tags',
+      indexT: 'Index local', indexS: 'SQLite + Tantivy',
+      searchK: 'Recherche', searchT: 'Requête locale', searchS: 'chemins · scores',
+      agentT: 'Agent LLM',
+      caption: 'Chaque étape reste sur votre machine — aucun appel à une API hébergée.'
+    },
+    why: {
+      title: 'Pourquoi obsidian-kb',
+      sub: "Quand la recherche par mot-clé est trop étroite, le sémantique trop flou, et envoyer tout le vault à un LLM inacceptable."
+    },
+    features: [
+      { icon: '⌖', text: 'Trouvez la bonne section, pas seulement le bon fichier.' },
+      { icon: '⚡', text: 'Combinez recherche par mots-clés et recherche sémantique.' },
+      { icon: '↝', text: 'Suivez les liens et backlinks Obsidian quand le contexte est connecté.' },
+      { icon: '◎', text: 'Des résultats traçables : chemins, titres, plages de lignes, scores et extraits.' },
+      { icon: '◈', text: 'Vos agents LLM ne lisent que les quelques passages réellement utiles.' },
+      { icon: '⌂', text: 'Indexation, embeddings et métadonnées 100 % locaux.' }
+    ],
+    modes: { title: 'Trois modes de recherche', sub: 'Le bon signal selon la question posée.' },
+    modesList: [
+      { name: 'bm25', color: '#a789ff', best: 'Noms exacts, commandes, erreurs, API, acronymes, noms de fichiers.', ex: 'CQRS event sourcing' },
+      { name: 'vector', color: '#80e3c0', best: 'Concepts flous, synonymes, idées à moitié oubliées.', ex: 'how to reduce context noise' },
+      { name: 'hybrid', color: '#e9c79b', best: "Le quotidien, quand l'exact et le sémantique comptent tous les deux.", ex: 'Obsidian RAG second brain' }
+    ],
+    agents: {
+      kicker: 'Pensé pour les agents',
+      title: 'Une mémoire locale pour vos LLM',
+      body: "Donnez à l'agent une règle simple : chercher d'abord, lire ensuite. obsidian-kb expose un serveur MCP local (stdio) et un serveur HTTP local — pour Claude Desktop, Codex, Cursor ou Continue.",
+      c1: 'serveur MCP local (stdio)'
+    },
+    privacy: {
+      title: 'Local par conception',
+      body: "obsidian-kb n'appelle ni OpenAI, ni Claude, ni aucune API hébergée. Les index restent en local (SQLite + Tantivy) et vos notes Markdown ne sont jamais modifiées."
+    },
+    install: {
+      title: 'Installation en une ligne',
+      body: 'Sur macOS Apple Silicon avec Homebrew. Linux et Windows dans la doc.',
+      link: 'Voir toute la documentation'
+    },
+    docs: {
+      on: 'Sur cette page', title: 'Documentation',
+      intro: "Tout ce qu'il faut pour installer obsidian-kb, indexer un vault et le brancher à vos agents.",
+      installT: 'Installation', installP: 'Choisissez votre plateforme. Gardez les fichiers extraits ensemble : certaines archives incluent des bibliothèques runtime à côté de l’exécutable.',
+      linuxNote: 'Archive .tar.gz par target Rust → /opt/obsidian-kb + wrapper sur le PATH.',
+      winNote: 'Archive .tar.gz via PowerShell → %LOCALAPPDATA%\\Programs, PATH utilisateur.',
+      installMore: 'Détails complets et binaires sur',
+      qsT: 'Quick start', qsP: 'Trois commandes pour passer d’un vault à une recherche.',
+      agT: 'Agents & MCP', agP: "obsidian-kb parle MCP (stdio) et HTTP local. Recommandez à l’agent : chercher d’abord, lire ensuite.",
+      agC1: 'serveur MCP stdio pour Claude Desktop, Cursor…',
+      agC2: 'serveur HTTP local (127.0.0.1)',
+      agC3: 'sortie JSON, groupée par document',
+      agMore: 'Recettes prêtes à copier :',
+      plgT: 'Plugin Obsidian', plgP: "Le plugin OKB (Vault Knowledge Base) enrobe la CLI obsidian-kb dans Obsidian : panneau latéral de recherche, notes liées, entretien de l'index. Sur desktop, il démarre lui-même « obsidian-kb serve » comme processus local et lui parle en HTTP sur localhost.",
+      plgLifeT: 'Démarrage automatique du mode serve',
+      plgLife: [
+        'Auto-start activé : OKB lance « obsidian-kb serve » depuis Obsidian. Si un serveur tourne déjà, il s’y connecte au lieu d’en relancer un.',
+        'À la fermeture, OKB n’arrête que le processus qu’il a lui-même démarré — un serveur lancé à la main dans un terminal reste actif.',
+        'Desktop uniquement : OKB utilise les API de processus Electron/Node ; Obsidian Mobile n’est pas supporté.'
+      ],
+      plgMore: 'Code source du plugin :',
+      pvT: 'Confidentialité', pvP: 'Tout est local. obsidian-kb ne fait aucun appel LLM hébergé.',
+      pvList: [
+        'Métadonnées et embeddings stockés dans SQLite, plein-texte dans Tantivy.',
+        'Aucune note Markdown modifiée pendant l’indexation ou la recherche.',
+        'CORS navigateur restreint à l’origine Obsidian par défaut.'
+      ]
+    },
+    steps: [
+      { n: '1', label: 'Créer la configuration du vault', cmd: 'obsidian-kb init --vault /path/to/ObsidianVault' },
+      { n: '2', label: 'Construire l’index local', cmd: 'obsidian-kb index' },
+      { n: '3', label: 'Poser une question', cmd: 'obsidian-kb search "How do I avoid overloading an agent context?"' }
+    ],
+    pluginSteps: [
+      { n: '1', label: 'Installer « Vault Knowledge Base » depuis le catalogue de plugins communautaires d’Obsidian.', cmd: '' },
+      { n: '2', label: 'Installer la CLI compagnon obsidian-kb (macOS · Homebrew).', cmd: 'brew install dgalichet/tap/obsidian-kb' },
+      { n: '3', label: 'Activer OKB, puis ouvrir Réglages → Plugins communautaires → OKB.', cmd: '' },
+      { n: '4', label: 'Cliquer sur Initialiser — OKB écrit la config du vault.', cmd: 'obsidian-kb init --vault <vault>' },
+      { n: '5', label: 'Laisser le démarrage automatique activé : OKB lance le mode serve pour vous (ou démarrer manuellement depuis l’onglet).', cmd: '' },
+      { n: '6', label: 'Ouvrir le panneau latéral OKB puis rafraîchir ou reconstruire l’index.', cmd: '' }
+    ],
+    footer: { tag: 'Recherche locale pour Obsidian', made: 'Fait avec soin pour la communauté Obsidian.' }
+  },
+  en: {
+    nav: { docs: 'Documentation' },
+    hero: {
+      badge: 'Local-first · Open source · Rust',
+      title: 'Your Obsidian vault, searchable like a knowledge base.',
+      sub: 'obsidian-kb adds a local retrieval layer to your Markdown notes so an agent like Claude or Codex can query your knowledge base — without ever sending the whole vault to an LLM.',
+      cta1: 'Get started', cta2: 'View on GitHub'
+    },
+    pipe: {
+      vaultT: 'Obsidian vault', vaultS: '.md · links · tags',
+      indexT: 'Local index', indexS: 'SQLite + Tantivy',
+      searchK: 'Search', searchT: 'Local query', searchS: 'paths · scores',
+      agentT: 'LLM agent',
+      caption: 'Every step stays on your machine — no hosted API calls.'
+    },
+    why: {
+      title: 'Why obsidian-kb',
+      sub: 'For the moment when keyword search is too narrow, semantic too fuzzy, and sending the whole vault to an LLM unacceptable.'
+    },
+    features: [
+      { icon: '⌖', text: 'Find the right note section, not just the right file.' },
+      { icon: '⚡', text: 'Combine exact keyword search with semantic search.' },
+      { icon: '↝', text: 'Follow Obsidian wikilinks and backlinks when context is connected.' },
+      { icon: '◎', text: 'Traceable results: file paths, headings, line ranges, scores and snippets.' },
+      { icon: '◈', text: 'Let LLM agents read only the few chunks they actually need.' },
+      { icon: '⌂', text: 'Keep indexing, embeddings and metadata fully local.' }
+    ],
+    modes: { title: 'Three search modes', sub: 'The right signal for the question you ask.' },
+    modesList: [
+      { name: 'bm25', color: '#a789ff', best: 'Exact names, commands, errors, APIs, acronyms, file names.', ex: 'CQRS event sourcing' },
+      { name: 'vector', color: '#80e3c0', best: 'Vague concepts, synonyms, half-remembered ideas.', ex: 'how to reduce context noise' },
+      { name: 'hybrid', color: '#e9c79b', best: 'Everyday search, when exact and semantic signals both matter.', ex: 'Obsidian RAG second brain' }
+    ],
+    agents: {
+      kicker: 'Built for agents',
+      title: 'A local memory for your LLMs',
+      body: 'Give the agent one simple rule: search first, read second. obsidian-kb exposes a local MCP server (stdio) and a local HTTP server — for Claude Desktop, Codex, Cursor or Continue.',
+      c1: 'local MCP server (stdio)'
+    },
+    privacy: {
+      title: 'Local by design',
+      body: 'obsidian-kb does not call OpenAI, Claude, or any hosted API. Indexes stay local (SQLite + Tantivy) and your Markdown notes are never modified.'
+    },
+    install: {
+      title: 'One-line install',
+      body: 'On macOS Apple Silicon with Homebrew. Linux and Windows in the docs.',
+      link: 'Read the full documentation'
+    },
+    docs: {
+      on: 'On this page', title: 'Documentation',
+      intro: 'Everything to install obsidian-kb, index a vault and wire it into your agents.',
+      installT: 'Installation', installP: 'Pick your platform. Keep extracted files together: some archives ship runtime libraries next to the executable.',
+      linuxNote: '.tar.gz per Rust target → /opt/obsidian-kb + wrapper on PATH.',
+      winNote: '.tar.gz via PowerShell → %LOCALAPPDATA%\\Programs, user PATH.',
+      installMore: 'Full details and binaries on',
+      qsT: 'Quick start', qsP: 'Three commands to go from a vault to a search.',
+      agT: 'Agents & MCP', agP: 'obsidian-kb speaks MCP (stdio) and local HTTP. Tell the agent: search first, read second.',
+      agC1: 'MCP stdio server for Claude Desktop, Cursor…',
+      agC2: 'local HTTP server (127.0.0.1)',
+      agC3: 'JSON output, grouped by document',
+      agMore: 'Ready-to-copy recipes:',
+      plgT: 'Obsidian plugin', plgP: 'The OKB (Vault Knowledge Base) plugin wraps the obsidian-kb CLI inside Obsidian: a side panel for search, related notes and index maintenance. On desktop it starts "obsidian-kb serve" itself as a local process and talks to it over localhost HTTP.',
+      plgLifeT: 'Automatic serve-mode start-up',
+      plgLife: [
+        'Auto-start on: OKB launches "obsidian-kb serve" from inside Obsidian. If a server is already running, it connects to it instead of spawning another.',
+        'On shutdown, OKB only stops the process it started itself — a server launched manually in a terminal keeps running.',
+        'Desktop only: OKB uses Electron/Node process APIs; Obsidian Mobile is not supported.'
+      ],
+      plgMore: 'Plugin source code:',
+      pvT: 'Privacy', pvP: 'Everything is local. obsidian-kb makes no hosted LLM calls.',
+      pvList: [
+        'Metadata and embeddings stored in SQLite, full-text in Tantivy.',
+        'No Markdown note is modified during indexing or search.',
+        'Browser CORS restricted to the Obsidian origin by default.'
+      ]
+    },
+    steps: [
+      { n: '1', label: 'Create the vault config', cmd: 'obsidian-kb init --vault /path/to/ObsidianVault' },
+      { n: '2', label: 'Build the local index', cmd: 'obsidian-kb index' },
+      { n: '3', label: 'Ask a question', cmd: 'obsidian-kb search "How do I avoid overloading an agent context?"' }
+    ],
+    pluginSteps: [
+      { n: '1', label: 'Install "Vault Knowledge Base" from Obsidian’s Community Plugins browser.', cmd: '' },
+      { n: '2', label: 'Install the companion obsidian-kb CLI (macOS · Homebrew).', cmd: 'brew install dgalichet/tap/obsidian-kb' },
+      { n: '3', label: 'Enable OKB, then open Settings → Community plugins → OKB.', cmd: '' },
+      { n: '4', label: 'Click Initialize — OKB writes the vault config.', cmd: 'obsidian-kb init --vault <vault>' },
+      { n: '5', label: 'Leave auto-start enabled: OKB launches serve mode for you (or start it manually from the tab).', cmd: '' },
+      { n: '6', label: 'Open the OKB side panel, then refresh or rebuild the index.', cmd: '' }
+    ],
+    footer: { tag: 'Local search for Obsidian', made: 'Made with care for the Obsidian community.' }
+  }
+};
+
+// ---------- helpers ----------
+function esc(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+var state = {
+  route: 'home',
+  lang: (function () { try { return localStorage.getItem('okb-lang') || 'fr'; } catch (e) { return 'fr'; } })(),
+  theme: (function () { try { return localStorage.getItem('okb-theme') || 'dark'; } catch (e) { return 'dark'; } })()
+};
+
+function parseHash() {
+  var h = (location.hash || '').replace(/^#\/?/, '');
+  if (h.indexOf('docs') === 0) return 'docs';
+  return 'home';
+}
+
+function setLang(l) {
+  try { localStorage.setItem('okb-lang', l); } catch (e) {}
+  state.lang = l;
+  render();
+}
+
+function setTheme(tm) {
+  try { localStorage.setItem('okb-theme', tm); } catch (e) {}
+  document.documentElement.setAttribute('data-theme', tm);
+  state.theme = tm;
+  renderThemeToggle();
+}
+
+function toggleTheme() { setTheme(state.theme === 'dark' ? 'light' : 'dark'); }
+
+function scrollToId(id) {
+  var el = document.getElementById(id);
+  if (el) window.scrollTo({ top: window.scrollY + el.getBoundingClientRect().top - 84, behavior: 'smooth' });
+}
+
+// ---------- section renderers ----------
+function homeView(t) {
+  var features = t.features.map(function (f) {
+    return '<div class="card" style="background:var(--surface);border:1px solid rgba(139,109,255,.14);border-radius:15px;padding:22px;">' +
+      '<div style="width:38px;height:38px;border-radius:10px;background:rgba(124,92,255,.13);display:flex;align-items:center;justify-content:center;color:var(--accent);font-size:18px;">' + esc(f.icon) + '</div>' +
+      '<div style="margin-top:14px;font-size:15.5px;line-height:1.5;color:var(--feat-text);font-weight:500;">' + esc(f.text) + '</div></div>';
+  }).join('');
+
+  var modes = t.modesList.map(function (m) {
+    return '<div class="card" style="background:var(--surface);border:1px solid rgba(139,109,255,.14);border-radius:15px;padding:22px;display:flex;flex-direction:column;gap:12px;">' +
+      '<div style="font-family:\'IBM Plex Mono\',monospace;font-size:13px;font-weight:500;color:#0a0a0f;background:' + m.color + ';align-self:flex-start;padding:4px 11px;border-radius:7px;">' + esc(m.name) + '</div>' +
+      '<div style="font-size:14.5px;color:var(--feat-text);line-height:1.5;flex:1;">' + esc(m.best) + '</div>' +
+      '<div style="font-family:\'IBM Plex Mono\',monospace;font-size:12px;color:var(--text-dim);background:#0c0c13;border:1px solid rgba(139,109,255,.12);border-radius:8px;padding:8px 10px;">' + esc(m.ex) + '</div></div>';
+  }).join('');
+
+  return '<main>' +
+    // HERO
+    '<section style="max-width:1160px;margin:0 auto;padding:76px 26px 30px;">' +
+      '<div style="display:inline-flex;align-items:center;gap:9px;font-size:12.5px;font-weight:500;color:var(--accent-soft);background:rgba(124,92,255,.1);border:1px solid rgba(124,92,255,.22);padding:6px 13px;border-radius:100px;">' +
+        '<span style="width:6px;height:6px;border-radius:50%;background:var(--teal);box-shadow:0 0 8px var(--teal);"></span>' + esc(t.hero.badge) + '</div>' +
+      '<h1 style="font-family:\'Space Grotesk\',sans-serif;font-weight:600;font-size:clamp(34px,5.2vw,60px);line-height:1.04;letter-spacing:-.025em;margin:22px 0 0;max-width:16ch;">' + esc(t.hero.title) + '</h1>' +
+      '<p style="font-size:clamp(16px,2vw,20px);color:var(--text-muted);max-width:56ch;margin:22px 0 0;line-height:1.55;">' + esc(t.hero.sub) + '</p>' +
+      '<div style="display:flex;flex-wrap:wrap;gap:13px;margin-top:32px;">' +
+        '<a href="#/docs" class="btn-primary" style="display:inline-flex;align-items:center;gap:8px;text-decoration:none;font-size:15px;font-weight:600;color:#0a0a0f;background:linear-gradient(135deg,#8b6bff,var(--accent));padding:13px 22px;border-radius:11px;box-shadow:0 8px 30px -8px rgba(124,92,255,.6);">' + esc(t.hero.cta1) + ' →</a>' +
+        '<a href="https://github.com/dgalichet/obsidian-kb" target="_blank" rel="noopener" class="btn-secondary" style="display:inline-flex;align-items:center;gap:8px;text-decoration:none;font-size:15px;font-weight:600;color:var(--text);background:var(--btn2-bg);border:1px solid rgba(139,109,255,.2);padding:13px 22px;border-radius:11px;">' + esc(t.hero.cta2) + '</a>' +
+      '</div>' +
+    '</section>' +
+
+    // PIPELINE
+    '<section style="max-width:1160px;margin:0 auto;padding:20px 26px 40px;">' +
+      '<div style="background:linear-gradient(180deg,var(--surface),var(--surface-3));border:1px solid rgba(139,109,255,.16);border-radius:22px;padding:38px 30px;position:relative;overflow:hidden;">' +
+        '<div style="position:absolute;inset:0;background-image:radial-gradient(rgba(139,109,255,.09) 1px, transparent 1px);background-size:24px 24px;opacity:.5;"></div>' +
+        '<div style="position:relative;display:flex;align-items:stretch;justify-content:center;gap:0;flex-wrap:wrap;">' +
+
+          '<div style="flex:1 1 180px;min-width:170px;max-width:250px;background:var(--surface-2);border:1px solid rgba(139,109,255,.2);border-radius:16px;padding:18px 16px;">' +
+            '<div style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--label);font-weight:600;">01 · Vault</div>' +
+            '<div style="font-family:\'Space Grotesk\',sans-serif;font-weight:600;font-size:17px;margin-top:8px;">' + esc(t.pipe.vaultT) + '</div>' +
+            '<div style="position:relative;height:66px;margin-top:14px;">' +
+              '<span style="position:absolute;left:12%;top:20%;width:9px;height:9px;border-radius:50%;background:var(--accent);animation:okbPulse 2.6s infinite;"></span>' +
+              '<span style="position:absolute;left:52%;top:8%;width:9px;height:9px;border-radius:50%;background:var(--teal);animation:okbPulse 2.6s .5s infinite;"></span>' +
+              '<span style="position:absolute;left:78%;top:44%;width:9px;height:9px;border-radius:50%;background:var(--accent);animation:okbPulse 2.6s 1s infinite;"></span>' +
+              '<span style="position:absolute;left:30%;top:64%;width:9px;height:9px;border-radius:50%;background:var(--accent-soft);animation:okbPulse 2.6s 1.4s infinite;"></span>' +
+              '<svg style="position:absolute;inset:0;width:100%;height:100%;" stroke="rgba(139,109,255,.35)" stroke-width="1"><line x1="14%" y1="26%" x2="53%" y2="14%"/><line x1="55%" y1="16%" x2="79%" y2="48%"/><line x1="30%" y1="66%" x2="16%" y2="30%"/><line x1="33%" y1="66%" x2="53%" y2="16%"/></svg>' +
+            '</div>' +
+            '<div style="font-size:12.5px;color:var(--text-dim);font-family:\'IBM Plex Mono\',monospace;">' + esc(t.pipe.vaultS) + '</div>' +
+          '</div>' +
+
+          '<div style="flex:0 0 46px;display:flex;align-items:center;justify-content:center;"><div style="width:100%;height:2px;background:repeating-linear-gradient(90deg,#8b6bff 0 8px,transparent 8px 22px);background-size:22px 2px;animation:okbFlow .9s linear infinite;"></div></div>' +
+
+          '<div style="flex:1 1 180px;min-width:170px;max-width:250px;background:var(--surface-2);border:1px solid rgba(139,109,255,.2);border-radius:16px;padding:18px 16px;">' +
+            '<div style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--label);font-weight:600;">02 · Index</div>' +
+            '<div style="font-family:\'Space Grotesk\',sans-serif;font-weight:600;font-size:17px;margin-top:8px;">' + esc(t.pipe.indexT) + '</div>' +
+            '<div style="display:flex;flex-direction:column;gap:6px;margin-top:14px;height:66px;justify-content:center;">' +
+              '<div style="display:flex;gap:6px;align-items:center;"><span style="font-size:10.5px;font-weight:600;color:var(--accent-soft);background:rgba(124,92,255,.14);padding:2px 7px;border-radius:5px;">BM25</span><div style="flex:1;height:4px;border-radius:3px;background:linear-gradient(90deg,#8b6bff,transparent);"></div></div>' +
+              '<div style="display:flex;gap:6px;align-items:center;"><span style="font-size:10.5px;font-weight:600;color:var(--teal);background:rgba(127,227,192,.12);padding:2px 7px;border-radius:5px;">vec</span><div style="flex:1;height:4px;border-radius:3px;background:linear-gradient(90deg,var(--teal),transparent);"></div></div>' +
+              '<div style="display:flex;gap:6px;align-items:center;"><span style="font-size:10.5px;font-weight:600;color:var(--amber);background:rgba(232,199,155,.12);padding:2px 7px;border-radius:5px;">graph</span><div style="flex:1;height:4px;border-radius:3px;background:linear-gradient(90deg,var(--amber),transparent);"></div></div>' +
+            '</div>' +
+            '<div style="font-size:12.5px;color:var(--text-dim);font-family:\'IBM Plex Mono\',monospace;">' + esc(t.pipe.indexS) + '</div>' +
+          '</div>' +
+
+          '<div style="flex:0 0 46px;display:flex;align-items:center;justify-content:center;"><div style="width:100%;height:2px;background:repeating-linear-gradient(90deg,#8b6bff 0 8px,transparent 8px 22px);background-size:22px 2px;animation:okbFlow .9s linear infinite;"></div></div>' +
+
+          '<div style="flex:1 1 180px;min-width:170px;max-width:250px;background:var(--surface-2);border:1px solid rgba(139,109,255,.2);border-radius:16px;padding:18px 16px;">' +
+            '<div style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--label);font-weight:600;">03 · ' + esc(t.pipe.searchK) + '</div>' +
+            '<div style="font-family:\'Space Grotesk\',sans-serif;font-weight:600;font-size:17px;margin-top:8px;">' + esc(t.pipe.searchT) + '</div>' +
+            '<div style="height:66px;margin-top:14px;display:flex;align-items:center;"><div style="width:100%;background:#0c0c13;border:1px solid rgba(139,109,255,.18);border-radius:8px;padding:8px 10px;font-family:\'IBM Plex Mono\',monospace;font-size:11.5px;color:#c9c3e0;"><span style="color:var(--teal);">›</span> search <span style="color:var(--accent);">--hybrid</span></div></div>' +
+            '<div style="font-size:12.5px;color:var(--text-dim);font-family:\'IBM Plex Mono\',monospace;">' + esc(t.pipe.searchS) + '</div>' +
+          '</div>' +
+
+          '<div style="flex:0 0 46px;display:flex;align-items:center;justify-content:center;"><div style="width:100%;height:2px;background:repeating-linear-gradient(90deg,var(--teal) 0 8px,transparent 8px 22px);background-size:22px 2px;animation:okbFlow .9s linear infinite;"></div></div>' +
+
+          '<div style="flex:1 1 180px;min-width:170px;max-width:250px;background:linear-gradient(180deg,var(--surface-2),var(--surface-2));border:1px solid rgba(127,227,192,.28);border-radius:16px;padding:18px 16px;">' +
+            '<div style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--teal);font-weight:600;">04 · Agent</div>' +
+            '<div style="font-family:\'Space Grotesk\',sans-serif;font-weight:600;font-size:17px;margin-top:8px;">' + esc(t.pipe.agentT) + '</div>' +
+            '<div style="height:66px;margin-top:14px;display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;">' +
+              '<span style="font-size:11px;font-weight:600;color:var(--feat-text);background:rgba(127,227,192,.12);border:1px solid rgba(127,227,192,.22);padding:4px 9px;border-radius:100px;">Claude</span>' +
+              '<span style="font-size:11px;font-weight:600;color:var(--feat-text);background:rgba(127,227,192,.12);border:1px solid rgba(127,227,192,.22);padding:4px 9px;border-radius:100px;">Codex</span>' +
+              '<span style="font-size:11px;font-weight:600;color:var(--feat-text);background:rgba(127,227,192,.12);border:1px solid rgba(127,227,192,.22);padding:4px 9px;border-radius:100px;">Cursor</span>' +
+            '</div>' +
+            '<div style="font-size:12.5px;color:var(--text-dim);font-family:\'IBM Plex Mono\',monospace;">MCP · HTTP</div>' +
+          '</div>' +
+        '</div>' +
+        '<div style="position:relative;text-align:center;margin-top:26px;font-size:13.5px;color:var(--text-dim);">' + esc(t.pipe.caption) + '</div>' +
+      '</div>' +
+    '</section>' +
+
+    // WHY / FEATURES
+    '<section style="max-width:1160px;margin:0 auto;padding:48px 26px;">' +
+      '<h2 style="font-family:\'Space Grotesk\',sans-serif;font-weight:600;font-size:clamp(24px,3vw,34px);letter-spacing:-.02em;margin:0;">' + esc(t.why.title) + '</h2>' +
+      '<p style="color:var(--text-muted);margin:10px 0 30px;max-width:52ch;">' + esc(t.why.sub) + '</p>' +
+      '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;">' + features + '</div>' +
+    '</section>' +
+
+    // MODES
+    '<section style="max-width:1160px;margin:0 auto;padding:26px 26px 48px;">' +
+      '<h2 style="font-family:\'Space Grotesk\',sans-serif;font-weight:600;font-size:clamp(24px,3vw,34px);letter-spacing:-.02em;margin:0 0 6px;">' + esc(t.modes.title) + '</h2>' +
+      '<p style="color:var(--text-muted);margin:0 0 26px;max-width:52ch;">' + esc(t.modes.sub) + '</p>' +
+      '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px;">' + modes + '</div>' +
+    '</section>' +
+
+    // AGENTS BAND
+    '<section style="max-width:1160px;margin:0 auto;padding:12px 26px 48px;">' +
+      '<div style="background:linear-gradient(120deg,var(--surface-3),var(--surface-3));border:1px solid rgba(127,227,192,.2);border-radius:22px;padding:clamp(26px,4vw,44px);display:grid;grid-template-columns:1fr;gap:26px;">' +
+        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:30px;align-items:center;">' +
+          '<div>' +
+            '<div style="font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--teal);font-weight:600;">' + esc(t.agents.kicker) + '</div>' +
+            '<h2 style="font-family:\'Space Grotesk\',sans-serif;font-weight:600;font-size:clamp(23px,3vw,32px);letter-spacing:-.02em;margin:12px 0 0;">' + esc(t.agents.title) + '</h2>' +
+            '<p style="color:var(--body-text);margin:14px 0 0;line-height:1.6;">' + esc(t.agents.body) + '</p>' +
+            '<div style="display:inline-flex;align-items:center;gap:10px;margin-top:20px;font-family:\'IBM Plex Mono\',monospace;font-size:13.5px;color:var(--teal);background:rgba(127,227,192,.1);border:1px solid rgba(127,227,192,.25);padding:9px 15px;border-radius:100px;">' +
+              '<span style="width:7px;height:7px;border-radius:50%;background:var(--teal);box-shadow:0 0 8px var(--teal);"></span>search first, read second</div>' +
+          '</div>' +
+          '<div style="background:#0c0c13;border:1px solid rgba(139,109,255,.16);border-radius:14px;padding:18px 20px;font-family:\'IBM Plex Mono\',monospace;font-size:13px;line-height:1.85;color:#cfc9e6;overflow-x:auto;">' +
+            '<div><span style="color:#6f6a8a;">$</span> <span style="color:#a68bff;">obsidian-kb</span> mcp</div>' +
+            '<div style="color:#6f6a8a;"># ' + esc(t.agents.c1) + '</div>' +
+            '<div style="margin-top:8px;"><span style="color:#6f6a8a;">$</span> <span style="color:#a68bff;">obsidian-kb</span> serve <span style="color:#7fe3c0;">--port</span> 27124</div>' +
+            '<div style="color:#6f6a8a;"># 127.0.0.1:27124</div>' +
+            '<div style="margin-top:8px;"><span style="color:#6f6a8a;">$</span> <span style="color:#a68bff;">obsidian-kb</span> search <span style="color:#e8c79b;">"local RAG"</span> <span style="color:#7fe3c0;">--mode</span> hybrid <span style="color:#7fe3c0;">--expand-graph</span></div>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+    '</section>' +
+
+    // PRIVACY + INSTALL
+    '<section style="max-width:1160px;margin:0 auto;padding:12px 26px 60px;display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;">' +
+      '<div style="background:var(--surface);border:1px solid rgba(139,109,255,.14);border-radius:18px;padding:28px;">' +
+        '<div style="width:42px;height:42px;border-radius:11px;background:rgba(127,227,192,.12);display:flex;align-items:center;justify-content:center;color:var(--teal);">' +
+          '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>' +
+        '</div>' +
+        '<h3 style="font-family:\'Space Grotesk\',sans-serif;font-weight:600;font-size:20px;margin:16px 0 0;">' + esc(t.privacy.title) + '</h3>' +
+        '<p style="color:var(--text-muted);margin:10px 0 0;line-height:1.6;">' + esc(t.privacy.body) + '</p>' +
+      '</div>' +
+      '<div style="background:var(--surface);border:1px solid rgba(139,109,255,.14);border-radius:18px;padding:28px;">' +
+        '<h3 style="font-family:\'Space Grotesk\',sans-serif;font-weight:600;font-size:20px;margin:0;">' + esc(t.install.title) + '</h3>' +
+        '<p style="color:var(--text-muted);margin:10px 0 16px;line-height:1.6;">' + esc(t.install.body) + '</p>' +
+        '<div style="background:#0c0c13;border:1px solid rgba(139,109,255,.16);border-radius:11px;padding:14px 16px;font-family:\'IBM Plex Mono\',monospace;font-size:13px;color:#cfc9e6;">' +
+          '<span style="color:#6f6a8a;">$</span> brew install <span style="color:#a68bff;">dgalichet/tap/obsidian-kb</span></div>' +
+        '<a href="#/docs" class="link-accent" style="display:inline-block;margin-top:16px;text-decoration:none;color:var(--accent);font-weight:600;font-size:14.5px;">' + esc(t.install.link) + ' →</a>' +
+      '</div>' +
+    '</section>' +
+  '</main>';
+}
+
+function docsView(t) {
+  var nav = [
+    { id: 'install', label: t.docs.installT },
+    { id: 'quickstart', label: t.docs.qsT },
+    { id: 'plugin', label: t.docs.plgT },
+    { id: 'agents', label: t.docs.agT },
+    { id: 'privacy', label: t.docs.pvT }
+  ].map(function (d) {
+    return '<button class="docbtn" onclick="scrollToId(\'' + d.id + '\')" style="text-align:left;background:none;border:none;color:var(--nav);font-family:inherit;font-size:14.5px;font-weight:500;padding:8px 12px;border-radius:8px;cursor:pointer;border-left:2px solid rgba(139,109,255,.15);">' + esc(d.label) + '</button>';
+  }).join('');
+
+  var steps = t.steps.map(function (s) {
+    return '<div style="display:flex;gap:16px;margin-bottom:14px;">' +
+      '<div style="flex:none;width:30px;height:30px;border-radius:50%;background:rgba(124,92,255,.14);color:var(--accent);font-weight:600;font-size:14px;display:flex;align-items:center;justify-content:center;font-family:\'Space Grotesk\',sans-serif;">' + esc(s.n) + '</div>' +
+      '<div style="flex:1;min-width:0;">' +
+        '<div style="font-weight:500;color:var(--feat-text);margin-bottom:8px;">' + esc(s.label) + '</div>' +
+        '<div style="background:#0c0c13;border:1px solid rgba(139,109,255,.16);border-radius:10px;padding:12px 15px;font-family:\'IBM Plex Mono\',monospace;font-size:13px;color:#cfc9e6;overflow-x:auto;">' + esc(s.cmd) + '</div>' +
+      '</div></div>';
+  }).join('');
+
+  var pluginSteps = t.pluginSteps.map(function (s) {
+    return '<li style="display:flex;gap:16px;margin-bottom:14px;">' +
+      '<div style="flex:none;width:30px;height:30px;border-radius:50%;background:rgba(124,92,255,.14);color:var(--accent);font-weight:600;font-size:14px;display:flex;align-items:center;justify-content:center;font-family:\'Space Grotesk\',sans-serif;">' + esc(s.n) + '</div>' +
+      '<div style="flex:1;min-width:0;">' +
+        '<div style="color:var(--feat-text);line-height:1.55;">' + esc(s.label) + '</div>' +
+        (s.cmd ? '<div style="margin-top:8px;background:#0c0c13;border:1px solid rgba(139,109,255,.16);border-radius:10px;padding:11px 14px;font-family:\'IBM Plex Mono\',monospace;font-size:12.5px;color:#cfc9e6;overflow-x:auto;"><span style="color:#6f6a8a;">$</span> ' + esc(s.cmd) + '</div>' : '') +
+      '</div></li>';
+  }).join('');
+
+  var plgLife = t.docs.plgLife.map(function (li) { return '<li>' + esc(li) + '</li>'; }).join('');
+  var pvList = t.docs.pvList.map(function (li) { return '<li>' + esc(li) + '</li>'; }).join('');
+
+  return '<main class="docs-grid" style="max-width:1160px;margin:0 auto;padding:44px 26px 70px;display:grid;grid-template-columns:220px 1fr;gap:44px;align-items:start;">' +
+    '<aside class="docs-aside" style="position:sticky;top:82px;">' +
+      '<div style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--label);font-weight:600;margin-bottom:12px;">' + esc(t.docs.on) + '</div>' +
+      '<div style="display:flex;flex-direction:column;gap:2px;">' + nav + '</div>' +
+    '</aside>' +
+    '<article style="min-width:0;">' +
+      '<h1 style="font-family:\'Space Grotesk\',sans-serif;font-weight:600;font-size:clamp(30px,4vw,42px);letter-spacing:-.025em;margin:0;">' + esc(t.docs.title) + '</h1>' +
+      '<p style="color:var(--text-muted);font-size:18px;margin:14px 0 0;max-width:60ch;">' + esc(t.docs.intro) + '</p>' +
+
+      '<div id="install" style="scroll-margin-top:90px;margin-top:46px;">' +
+        '<h2 style="font-family:\'Space Grotesk\',sans-serif;font-weight:600;font-size:26px;letter-spacing:-.02em;margin:0 0 6px;padding-top:8px;border-top:1px solid rgba(139,109,255,.12);">' + esc(t.docs.installT) + '</h2>' +
+        '<p style="color:var(--text-muted);margin:12px 0 18px;">' + esc(t.docs.installP) + '</p>' +
+        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;">' +
+          '<div style="background:var(--surface-3);border:1px solid rgba(139,109,255,.14);border-radius:13px;overflow:hidden;">' +
+            '<div style="padding:11px 15px;font-size:12.5px;font-weight:600;color:var(--accent-soft);border-bottom:1px solid rgba(139,109,255,.12);background:var(--surface);">macOS · Apple Silicon</div>' +
+            '<div style="padding:14px 15px;font-family:\'IBM Plex Mono\',monospace;font-size:12.5px;color:var(--body-text);"><span style="color:var(--text-dim);">$</span> brew install <span style="color:var(--accent);">dgalichet/tap/obsidian-kb</span></div>' +
+          '</div>' +
+          '<div style="background:var(--surface-3);border:1px solid rgba(139,109,255,.14);border-radius:13px;overflow:hidden;">' +
+            '<div style="padding:11px 15px;font-size:12.5px;font-weight:600;color:var(--accent-soft);border-bottom:1px solid rgba(139,109,255,.12);background:var(--surface);">Linux · x86_64</div>' +
+            '<div style="padding:14px 15px;font-family:\'IBM Plex Mono\',monospace;font-size:12.5px;color:var(--body-text);line-height:1.7;">' + esc(t.docs.linuxNote) + '</div>' +
+          '</div>' +
+          '<div style="background:var(--surface-3);border:1px solid rgba(139,109,255,.14);border-radius:13px;overflow:hidden;">' +
+            '<div style="padding:11px 15px;font-size:12.5px;font-weight:600;color:var(--accent-soft);border-bottom:1px solid rgba(139,109,255,.12);background:var(--surface);">Windows · x86_64</div>' +
+            '<div style="padding:14px 15px;font-family:\'IBM Plex Mono\',monospace;font-size:12.5px;color:var(--body-text);line-height:1.7;">' + esc(t.docs.winNote) + '</div>' +
+          '</div>' +
+        '</div>' +
+        '<p style="color:var(--text-dim);font-size:13.5px;margin:14px 0 0;">' + esc(t.docs.installMore) + ' <a href="https://github.com/dgalichet/obsidian-kb/releases/latest" target="_blank" rel="noopener" style="color:var(--accent);">GitHub Releases</a>.</p>' +
+      '</div>' +
+
+      '<div id="quickstart" style="scroll-margin-top:90px;margin-top:46px;">' +
+        '<h2 style="font-family:\'Space Grotesk\',sans-serif;font-weight:600;font-size:26px;letter-spacing:-.02em;margin:0 0 6px;padding-top:8px;border-top:1px solid rgba(139,109,255,.12);">' + esc(t.docs.qsT) + '</h2>' +
+        '<p style="color:var(--text-muted);margin:12px 0 18px;">' + esc(t.docs.qsP) + '</p>' + steps +
+      '</div>' +
+
+      '<div id="plugin" style="scroll-margin-top:90px;margin-top:46px;">' +
+        '<h2 style="font-family:\'Space Grotesk\',sans-serif;font-weight:600;font-size:26px;letter-spacing:-.02em;margin:0 0 6px;padding-top:8px;border-top:1px solid rgba(139,109,255,.12);">' + esc(t.docs.plgT) + '</h2>' +
+        '<p style="color:var(--text-muted);margin:12px 0 18px;line-height:1.65;">' + esc(t.docs.plgP) + '</p>' +
+        '<ol style="list-style:none;margin:0 0 22px;padding:0;">' + pluginSteps + '</ol>' +
+        '<div style="background:linear-gradient(120deg,var(--surface-3),var(--surface-3));border:1px solid rgba(127,227,192,.2);border-radius:14px;padding:20px 22px;">' +
+          '<div style="display:flex;align-items:center;gap:9px;color:var(--teal);font-weight:600;font-size:14px;font-family:\'Space Grotesk\',sans-serif;">' +
+            '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3l14 9-14 9V3z"/></svg>' + esc(t.docs.plgLifeT) +
+          '</div>' +
+          '<ul style="margin:12px 0 0;padding-left:20px;color:var(--body-text);line-height:1.75;font-size:14.5px;">' + plgLife + '</ul>' +
+        '</div>' +
+        '<p style="color:var(--text-dim);font-size:13.5px;margin:14px 0 0;">' + esc(t.docs.plgMore) + ' <a href="https://github.com/dgalichet/obsidian-kb-plugin" target="_blank" rel="noopener" style="color:var(--accent);">dgalichet/obsidian-kb-plugin</a>.</p>' +
+      '</div>' +
+
+      '<div id="agents" style="scroll-margin-top:90px;margin-top:46px;">' +
+        '<h2 style="font-family:\'Space Grotesk\',sans-serif;font-weight:600;font-size:26px;letter-spacing:-.02em;margin:0 0 6px;padding-top:8px;border-top:1px solid rgba(139,109,255,.12);">' + esc(t.docs.agT) + '</h2>' +
+        '<p style="color:var(--text-muted);margin:12px 0 18px;">' + esc(t.docs.agP) + '</p>' +
+        '<div style="background:#0c0c13;border:1px solid rgba(139,109,255,.16);border-radius:12px;padding:18px 20px;font-family:\'IBM Plex Mono\',monospace;font-size:13px;line-height:1.9;color:#cfc9e6;overflow-x:auto;">' +
+          '<div style="color:#6f6a8a;"># ' + esc(t.docs.agC1) + '</div>' +
+          '<div><span style="color:#6f6a8a;">$</span> <span style="color:#a68bff;">obsidian-kb</span> mcp</div>' +
+          '<div style="margin-top:10px;color:#6f6a8a;"># ' + esc(t.docs.agC2) + '</div>' +
+          '<div><span style="color:#6f6a8a;">$</span> <span style="color:#a68bff;">obsidian-kb</span> serve <span style="color:#7fe3c0;">--port</span> 27124</div>' +
+          '<div style="margin-top:10px;color:#6f6a8a;"># ' + esc(t.docs.agC3) + '</div>' +
+          '<div><span style="color:#6f6a8a;">$</span> <span style="color:#a68bff;">obsidian-kb</span> search <span style="color:#e8c79b;">"query"</span> <span style="color:#7fe3c0;">--mode</span> hybrid <span style="color:#7fe3c0;">--expand-graph</span> <span style="color:#7fe3c0;">--json</span></div>' +
+        '</div>' +
+        '<p style="color:var(--text-dim);font-size:13.5px;margin:14px 0 0;">' + esc(t.docs.agMore) + ' <a href="https://github.com/dgalichet/obsidian-kb/blob/main/docs/agent-recipes.md" target="_blank" rel="noopener" style="color:var(--accent);">docs/agent-recipes.md</a>.</p>' +
+      '</div>' +
+
+      '<div id="privacy" style="scroll-margin-top:90px;margin-top:46px;">' +
+        '<h2 style="font-family:\'Space Grotesk\',sans-serif;font-weight:600;font-size:26px;letter-spacing:-.02em;margin:0 0 6px;padding-top:8px;border-top:1px solid rgba(139,109,255,.12);">' + esc(t.docs.pvT) + '</h2>' +
+        '<p style="color:var(--text-muted);margin:12px 0 14px;line-height:1.65;">' + esc(t.docs.pvP) + '</p>' +
+        '<ul style="margin:0;padding-left:20px;color:var(--body-text);line-height:1.8;">' + pvList + '</ul>' +
+      '</div>' +
+    '</article>' +
+  '</main>';
+}
+
+// ---------- render ----------
+var MOON_SVG = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z"></path></svg>';
+var SUN_SVG = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.2"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg>';
+
+function renderThemeToggle() {
+  var btn = document.getElementById('theme-toggle');
+  var dark = state.theme === 'dark';
+  var label = dark
+    ? (state.lang === 'fr' ? 'Mode jour' : 'Light mode')
+    : (state.lang === 'fr' ? 'Mode nuit' : 'Dark mode');
+  btn.innerHTML = dark ? MOON_SVG : SUN_SVG;
+  btn.title = label;
+  btn.setAttribute('aria-label', label);
+}
+
+function applyStaticI18n(t) {
+  document.querySelectorAll('[data-i18n]').forEach(function (node) {
+    var path = node.getAttribute('data-i18n').split('.');
+    var v = t; for (var i = 0; i < path.length; i++) v = v[path[i]];
+    node.textContent = v;
+  });
+  // lang toggle button styles
+  var activeBtn = "font-family:inherit;font-size:12.5px;font-weight:600;padding:5px 11px;border-radius:7px;border:none;cursor:pointer;background:linear-gradient(135deg,#8b6bff,var(--accent));color:#0a0a0f;";
+  var idleBtn = "font-family:inherit;font-size:12.5px;font-weight:600;padding:5px 11px;border-radius:7px;border:none;cursor:pointer;background:transparent;color:var(--text-dim);";
+  document.getElementById('lang-fr').style.cssText = state.lang === 'fr' ? activeBtn : idleBtn;
+  document.getElementById('lang-en').style.cssText = state.lang === 'en' ? activeBtn : idleBtn;
+  renderThemeToggle();
+}
+
+function render() {
+  var t = DICTS[state.lang];
+  document.documentElement.lang = state.lang;
+  applyStaticI18n(t);
+  var view = document.getElementById('view');
+  var html = (state.route === 'docs') ? docsView(t) : homeView(t);
+  view.innerHTML = html;
+  // restart entrance animation
+  view.style.animation = 'none'; void view.offsetWidth; view.style.animation = '';
+}
+
+window.addEventListener('hashchange', function () {
+  state.route = parseHash();
+  render();
+  window.scrollTo(0, 0);
+});
+
+document.documentElement.setAttribute('data-theme', state.theme);
+state.route = parseHash();
+render();
+</script>
+</body>
+</html>
