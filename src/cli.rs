@@ -240,6 +240,13 @@ pub struct McpArgs {
 
     #[arg(
         long,
+        default_value_t = DEFAULT_SERVE_PORT,
+        help = "Loopback HTTP service port used to read the active Obsidian note"
+    )]
+    pub workspace_port: u16,
+
+    #[arg(
+        long,
         value_name = "SECONDS",
         help = "Override the MCP vector model idle unload timeout; 0 disables auto-unload"
     )]
