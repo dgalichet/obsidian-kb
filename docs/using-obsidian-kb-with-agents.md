@@ -269,6 +269,24 @@ MCP mode exposes these tools:
 - `warmup`: load the local embedding model and stored embeddings into memory;
 - `unload`: drop the warm model and embedding cache when it is no longer needed;
 - `status`: inspect whether the warm cache is loaded.
+- `get_current_note`: read the active Markdown note identity published by the
+  local Obsidian plugin; optionally select one explicit `session_id`.
+
+When the user refers to the current note, call `get_current_note` first and
+proceed only when `status` is `available`. Pin its `vault_path`, `note.path`,
+and `session_id` for the whole request. An `ambiguous` reply lists live sessions
+and requires an explicit choice; `stale`, `unavailable`, and `no_active_note`
+must not be used as note targets. The context expires after 90 seconds without
+a plugin heartbeat and exists only in HTTP service memory. Stdio MCP queries
+that service on port 27124; use `mcp --workspace-port PORT` when the plugin and
+`serve --port PORT` use another port. The service verifies the vault on every
+query, so a service for a different vault cannot supply the target.
+
+This tool reports identity only, including existing notes not yet indexed.
+It does not provide editor buffers or selections. `context_version` tracks UI
+context changes, not file content. Read the pinned file separately and verify
+its content has not changed before editing it; opening another tab does not
+change the pinned target.
 
 For local HTTP clients, `obsidian-kb serve` exposes the same retrieval surface
 plus a streamable HTTP MCP endpoint at `POST /mcp`. It binds to

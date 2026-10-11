@@ -98,6 +98,15 @@ fn route_request(server: &mut McpServer, request: HttpRequest) -> HttpResponse {
             ("POST", "/search") => route_json_body(&request, |body| server.tool_search_http(&body)),
             ("POST", "/show") => route_json_body(&request, |body| server.tool_show(&body)),
             ("POST", "/graph") => route_json_body(&request, |body| server.tool_graph(&body)),
+            ("POST", "/workspace/context") => {
+                route_json_body(&request, |body| server.workspace_update(body))
+            }
+            ("DELETE", "/workspace/context") => {
+                route_json_body(&request, |body| server.workspace_delete(body))
+            }
+            ("POST", "/workspace/current-note") => {
+                route_json_body(&request, |body| server.workspace_current(body))
+            }
             ("POST", "/index/refresh") => route_index_refresh(server, &request),
             ("POST", "/shutdown") => {
                 let mut response = HttpResponse::json(200, json!({ "shutting_down": true }));
@@ -111,7 +120,14 @@ fn route_request(server: &mut McpServer, request: HttpRequest) -> HttpResponse {
             ),
             _ if matches!(
                 path,
-                "/search" | "/show" | "/graph" | "/index/refresh" | "/shutdown" | "/mcp"
+                "/search"
+                    | "/show"
+                    | "/graph"
+                    | "/index/refresh"
+                    | "/shutdown"
+                    | "/mcp"
+                    | "/workspace/context"
+                    | "/workspace/current-note"
             ) =>
             {
                 HttpResponse::json_error(
@@ -167,7 +183,7 @@ fn add_cors_headers(response: &mut HttpResponse, origin: Option<String>) {
     ));
     response.extra_headers.push((
         "Access-Control-Allow-Methods",
-        "GET, POST, OPTIONS".to_string(),
+        "GET, POST, DELETE, OPTIONS".to_string(),
     ));
 }
 

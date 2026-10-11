@@ -30,6 +30,7 @@ pub mod tantivy_index;
 pub mod vault;
 pub mod vector_search;
 pub mod version;
+mod workspace;
 
 use anyhow::{Context, Result, bail};
 use clap::Parser;

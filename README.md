@@ -382,7 +382,8 @@ Published vault-size benchmark results and the reproducible synthetic benchmark
 runner are documented in [docs/benchmarks.md](docs/benchmarks.md).
 
 For MCP clients, `obsidian-kb mcp` runs a local stdio server with search,
-related, show, graph, tags, properties, stats, warmup, unload, and status tools.
+related, show, graph, tags, properties, stats, warmup, unload, status, and
+`get_current_note` tools.
 The MCP `search` tool accepts `tags` and `properties` arrays, plus `tag` and
 `property` aliases for single filters. Hybrid and vector searches keep the local
 embedding model and stored embeddings warm between requests, then unload them
@@ -391,9 +392,63 @@ automatically after the configured idle timeout.
 For local HTTP clients, `obsidian-kb serve` binds to `127.0.0.1:27124` by
 default and prints the chosen URL. Use `--port` to override the port. It exposes
 `GET /health`, `GET /status`, `POST /search`, `POST /show`, `POST /graph`,
-`POST /index/refresh`, `POST /shutdown`, and `POST /mcp`. The `/mcp` endpoint
+`POST /index/refresh`, `POST /shutdown`, `POST /workspace/context`,
+`DELETE /workspace/context`, `POST /workspace/current-note`, and `POST /mcp`.
+The `/mcp` endpoint
 accepts MCP JSON-RPC over streamable HTTP and can return either JSON or
 `text/event-stream` responses.
+
+### Active Obsidian note
+
+The Obsidian plugin publishes the active Markdown note identity when the UI
+context changes, and refreshes it with a heartbeat. This transient state is
+kept in service memory, separate from the search index; an existing note can be
+reported even before it has been indexed. No editor text, selection, or content
+revision is synchronized, and these endpoints never modify the vault.
+
+Publish with `POST /workspace/context`:
+
+```json
+{
+  "vault_path": "/absolute/path/to/vault",
+  "session_id": "unique-obsidian-workspace-session-id",
+  "context_version": 1,
+  "note": { "path": "Notes/Current.md", "title": "Current" }
+}
+```
+
+Use `note: null` when no Markdown note is active. A session's version must
+increase when its note identity changes. Repeating the same version and payload
+refreshes its heartbeat; older or conflicting updates are rejected. Sessions
+expire after 90 seconds without a successful publication. At most 64 sessions
+are retained; new sessions can replace expired sessions. Vault paths must match
+the service's canonical vault, and note paths must identify existing Markdown
+files inside that vault, including when symlinks are involved.
+
+Read via the MCP `get_current_note` tool or `POST /workspace/current-note` with
+`{"vault_path":"/absolute/path/to/vault"}` and optional `session_id`. The reply
+has `status`, `vault_path`, and `note`. A usable identity is returned only for
+`status: "available"`, with `session_id`, `context_version`, and `age_ms`.
+Other statuses are `no_active_note`, `unavailable`, `stale`, and `ambiguous`;
+their `note` is null. With multiple live sessions the reply includes candidate
+session IDs, and callers must choose an explicit session. Unloading a plugin
+can remove its session via `DELETE /workspace/context` with `vault_path` and
+`session_id`; an abrupt close is detected through expiry.
+
+HTTP MCP reads the service's workspace state directly. Stdio MCP consults the
+same loopback service and returns `unavailable` when it is absent or serves a
+different vault. For a custom service port, configure both ends consistently:
+
+```bash
+obsidian-kb serve --port 27125
+obsidian-kb mcp --workspace-port 27125
+```
+
+Agents should pin the returned vault, note path, and session at the beginning of
+a request about the current note. Changing tabs must not redirect work already
+in progress. `context_version` identifies UI context changes, **not a file
+content revision**: read the targeted file separately, and check for intervening
+content changes before applying edits.
 
 Browser CORS access is restricted to configured origins. The default is the
 Obsidian desktop origin:

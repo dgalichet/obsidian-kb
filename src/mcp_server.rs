@@ -13,6 +13,7 @@ use crate::paths::KbPaths;
 use crate::related::{self, RelatedInput, RelatedOptions};
 use crate::search::{self, SearchOptions};
 use crate::vector_search::VectorSearchCache;
+use crate::workspace::{self, ContextDelete, ContextUpdate, CurrentNoteRequest, WorkspaceContexts};
 
 pub(crate) const MCP_PROTOCOL_VERSION: &str = "2024-11-05";
 const IDLE_CHECK_INTERVAL: Duration = Duration::from_millis(500);
@@ -30,6 +31,7 @@ pub fn run(mut config: AppConfig, args: McpArgs) -> Result<()> {
     }
 
     let mut server = McpServer::new(config);
+    server.workspace_port = Some(args.workspace_port);
     if server.config.mcp.preload_embedder && server.config.embeddings.enabled {
         server.warm_up_vector_cache()?;
     }
@@ -80,6 +82,8 @@ pub(crate) struct McpServer {
     config: AppConfig,
     transport: &'static str,
     vector_cache: VectorSearchCache,
+    workspace: WorkspaceContexts,
+    workspace_port: Option<u16>,
 }
 
 impl McpServer {
@@ -88,6 +92,8 @@ impl McpServer {
             config,
             transport: "mcp_stdio",
             vector_cache: VectorSearchCache::default(),
+            workspace: WorkspaceContexts::default(),
+            workspace_port: None,
         }
     }
 
@@ -238,10 +244,17 @@ impl McpServer {
                 "vector_embedding_count": self.vector_cache.cached_embedding_count()
             })),
             "status" => Ok(self.tool_status()),
+            "get_current_note" => self.tool_current_note(&arguments),
             _ => Err(anyhow!("unknown tool `{name}`")),
         };
         match result {
-            Ok(value) => Ok(tool_result(value)),
+            Ok(value) => {
+                let mut result = tool_result(value.clone());
+                if name == "get_current_note" {
+                    result["structuredContent"] = value;
+                }
+                Ok(result)
+            }
             Err(error) => Ok(json!({
                 "content": [{
                     "type": "text",
@@ -250,6 +263,47 @@ impl McpServer {
                 "isError": true
             })),
         }
+    }
+
+    fn tool_current_note(&self, arguments: &Value) -> Result<Value> {
+        #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Arguments {
+            session_id: Option<String>,
+        }
+        let arguments: Arguments = serde_json::from_value(arguments.clone())?;
+        let reply = if let Some(port) = self.workspace_port {
+            workspace::current_note_via_http(&self.config.vault.path, port, arguments.session_id)?
+        } else {
+            self.workspace.current(
+                &self.config.vault.path,
+                CurrentNoteRequest {
+                    vault_path: self.config.vault.path.clone(),
+                    session_id: arguments.session_id,
+                },
+            )?
+        };
+        Ok(serde_json::to_value(reply)?)
+    }
+
+    pub(crate) fn workspace_update(&mut self, body: Value) -> Result<Value> {
+        let update: ContextUpdate = serde_json::from_value(body)?;
+        Ok(serde_json::to_value(
+            self.workspace.update(&self.config.vault.path, update)?,
+        )?)
+    }
+
+    pub(crate) fn workspace_delete(&mut self, body: Value) -> Result<Value> {
+        let request: ContextDelete = serde_json::from_value(body)?;
+        let removed = self.workspace.delete(&self.config.vault.path, request)?;
+        Ok(json!({ "removed": removed }))
+    }
+
+    pub(crate) fn workspace_current(&self, body: Value) -> Result<Value> {
+        let request: CurrentNoteRequest = serde_json::from_value(body)?;
+        Ok(serde_json::to_value(
+            self.workspace.current(&self.config.vault.path, request)?,
+        )?)
     }
 
     pub(crate) fn tool_search(&mut self, arguments: &Value) -> Result<Value> {
@@ -515,6 +569,20 @@ fn write_message(writer: &mut impl Write, message: &str) -> Result<()> {
 
 fn tools() -> Value {
     json!([
+        {
+            "name": "get_current_note",
+            "description": "Get the active Obsidian Markdown note identity published by the local plugin. Only status=available provides a usable note; stale, ambiguous and unavailable contexts have note=null. Pin vault_path, note.path and session_id before acting. context_version tracks UI context changes, not file content; read and check the file separately before edits.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "session_id": {
+                        "type": "string",
+                        "description": "Explicit Obsidian plugin workspace/session to select when multiple live sessions are reported."
+                    }
+                },
+                "additionalProperties": false
+            }
+        },
         {
             "name": "search",
             "description": "Search the indexed Obsidian vault and return note-level results with matched chunks. Hybrid and vector searches reuse a warm local embedding model and cached stored embeddings while loaded.",
